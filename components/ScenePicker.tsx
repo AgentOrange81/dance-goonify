@@ -25,9 +25,6 @@ export function ScenePicker({
             `}
           >
             <div className="text-sm text-gray-200 lowercase">{scene.title}</div>
-            <div className="text-xs text-gray-500 mt-1 lowercase">
-              {scene.motion.swayHz.toFixed(2)}hz sway
-            </div>
           </button>
         )
       })}

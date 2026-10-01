@@ -3,8 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { DropZone } from '@/components/DropZone'
 import { ScenePicker } from '@/components/ScenePicker'
-import { SceneCanvas, type Calibration } from '@/components/SceneCanvas'
-import { CalibratePanel } from '@/components/CalibratePanel'
+import { SceneCanvas } from '@/components/SceneCanvas'
 import { RecordButton } from '@/components/RecordButton'
 import { SCENES } from '@/lib/scenes'
 import type { FacePatch } from '@/lib/face/crop'
@@ -12,25 +11,15 @@ import type { FacePatch } from '@/lib/face/crop'
 export default function HomePage() {
   const [sceneId, setSceneId] = useState<string>(SCENES[0].id)
   const [facePatch, setFacePatch] = useState<FacePatch | null>(null)
-  const [sourceImage, setSourceImage] = useState<HTMLImageElement | null>(null)
-  const [calibration, setCalibration] = useState<Calibration>({ dx: 0, dy: 0, rxMul: 1, ryMul: 1, rotation: 0 })
-  const recordCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   // After mount, the SceneCanvas's <canvas> is in the DOM — point RecordButton at it.
-  // We use a ref callback on a parent wrapper, but simpler: querySelector once on mount.
   useEffect(() => {
-    recordCanvasRef.current = document.querySelector('canvas')
+    canvasRef.current = document.querySelector('canvas')
   }, [sceneId, facePatch])
 
-  const handleFaceReady = (patch: FacePatch, img: HTMLImageElement) => {
+  const handleFaceReady = (patch: FacePatch) => {
     setFacePatch(patch)
-    setSourceImage(img)
-  }
-
-  // Bridge CalibratePanel → SceneCanvas via a custom event so SceneCanvas's internal state can update
-  const handleCalibrateChange = (next: Calibration) => {
-    setCalibration(next)
-    window.dispatchEvent(new CustomEvent('dance-calibrate', { detail: next }))
   }
 
   return (
@@ -66,25 +55,15 @@ export default function HomePage() {
 
           <section>
             <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-2">
-              3. record
+              3. download
             </h2>
-            <RecordButton canvasRef={recordCanvasRef} />
+            <RecordButton canvasRef={canvasRef} />
           </section>
         </div>
 
-        {/* Right column: canvas + calibrate */}
+        {/* Right column: canvas */}
         <div className="lg:col-span-2 space-y-4">
-          <SceneCanvas
-            sceneId={sceneId}
-            facePatch={facePatch}
-            sourceImage={sourceImage}
-          />
-
-          <CalibratePanel
-            value={calibration}
-            onChange={handleCalibrateChange}
-          />
-
+          <SceneCanvas sceneId={sceneId} facePatch={facePatch} />
           <p className="text-xs text-gray-600 text-center lowercase">
             18+ only. by using this site you confirm you have rights to the uploaded face.
           </p>

@@ -7,7 +7,7 @@ import { cropFace, type FacePatch } from '@/lib/face/crop'
 const MAX_BYTES = 10 * 1024 * 1024
 const ACCEPT = 'image/png,image/jpeg,image/webp'
 
-export function DropZone({ onFaceReady }: { onFaceReady: (patch: FacePatch, source: HTMLImageElement) => void }) {
+export function DropZone({ onFaceReady }: { onFaceReady: (patch: FacePatch) => void }) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'no-face' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState<string>('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -50,9 +50,8 @@ export function DropZone({ onFaceReady }: { onFaceReady: (patch: FacePatch, sour
         }
       }
       const patch = cropFace(img, landmarks)
-      // TODO: color transfer to dancer reference happens in SceneCanvas once scene is loaded
       setStatus('ready')
-      onFaceReady(patch, img)
+      onFaceReady(patch)
     } catch (err) {
       setStatus('error')
       setErrorMsg(err instanceof Error ? err.message : 'unknown error')

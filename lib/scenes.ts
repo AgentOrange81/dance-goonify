@@ -1,65 +1,37 @@
 export type Scene = {
   id: string
   title: string
-  background: string        // /templates/scenes/<bg>.webp
-  dancer: string            // /templates/scenes/<dancer>.webp (face oval baked into asset)
-  dancerLayout: { x: number; y: number; w: number; h: number }  // px in 1280x720 canvas
-  faceHole: {               // oval where user face composites, NORMALIZED 0-1 of dancer bounds
-    cx: number; cy: number; rx: number; ry: number; rotation: number
+  background: string  // /templates/scenes/<bg>.webp (static empty club room)
+  dancer: string      // /templates/scenes/<dancer>.webm (H3-generated animated dancer, ~6s loop)
+  faceHole: {         // oval where user face composites, in CANVAS pixel coords (1280x720)
+    cx: number        // center x in canvas pixels
+    cy: number        // center y in canvas pixels
+    rx: number        // half-width in canvas pixels
+    ry: number        // half-height in canvas pixels
+    rotation: number  // degrees
   }
-  grade: {
-    tintHex: string         // e.g. "#1a4a55"
-    tintAmount: number      // 0-1 multiply strength
-    contrast: number        // 0.8-1.2
-    vignette: number        // 0-1
-  }
-  motion: {
-    swayX: number           // px amplitude
-    swayHz: number          // cycles per second
-    bounceY: number         // px amplitude
-    bounceHz: number
-    roll: number            // degrees amplitude
-    lean: number            // px amplitude
-    scalePulse: number      // 0-0.05
-  }
-  hairOverlay?: string      // /templates/scenes/<hair>.webp, drawn after face
 }
 
-// All scenes share the same empty club room plate — H3-generated (2026-10-01)
-// dancerLayout.x/y is the TOP-LEFT of the dancer sprite in 1280x720 canvas coords.
-// Dance plate positions are rough estimates from frame inspection. Use calibrate sliders to refine.
 const CLUB_ROOM = '/templates/scenes/club-room-empty.webp'
+
+// faceHole coords measured from each plate (2026-10-01):
+//   front: oval visible at x≈540-700, y≈110-290  → cx=620, cy=200, rx=80, ry=90
+//   side:  oval visible at x≈580-740, y≈90-260   → cx=660, cy=175, ry=85, slight tilt
 
 export const SCENES: Scene[] = [
   {
     id: 'club-front-grind',
-    title: 'front grind',
+    title: 'front',
     background: CLUB_ROOM,
-    dancer: '/templates/scenes/dancer-front-grind.webp',
-    dancerLayout: { x: 240, y: 0, w: 800, h: 720 },
-    faceHole: { cx: 0.5, cy: 0.28, rx: 0.13, ry: 0.20, rotation: -8 },
-    grade: { tintHex: '#1a4a55', tintAmount: 0.3, contrast: 1.05, vignette: 0.4 },
-    motion: { swayX: 18, swayHz: 0.5, bounceY: 12, bounceHz: 1.0, roll: 1.5, lean: 6, scalePulse: 0.015 },
+    dancer: '/templates/scenes/dancer-front-grind.webm',
+    faceHole: { cx: 620, cy: 200, rx: 80, ry: 90, rotation: -8 },
   },
   {
     id: 'club-side-grind',
-    title: 'side angle',
+    title: 'side',
     background: CLUB_ROOM,
-    dancer: '/templates/scenes/dancer-side-grind.webp',
-    dancerLayout: { x: 220, y: 0, w: 820, h: 720 },
-    faceHole: { cx: 0.5, cy: 0.25, rx: 0.11, ry: 0.17, rotation: -30 },
-    grade: { tintHex: '#1a3a48', tintAmount: 0.35, contrast: 1.08, vignette: 0.45 },
-    motion: { swayX: 22, swayHz: 0.45, bounceY: 10, bounceHz: 0.9, roll: 1.2, lean: 8, scalePulse: 0.012 },
-  },
-  {
-    id: 'club-back-arch',
-    title: 'back arch',
-    background: CLUB_ROOM,
-    dancer: '/templates/scenes/dancer-back-arch.webp',
-    dancerLayout: { x: 240, y: 0, w: 800, h: 720 },
-    faceHole: { cx: 0.5, cy: 0.24, rx: 0.12, ry: 0.18, rotation: -25 },
-    grade: { tintHex: '#1a3a48', tintAmount: 0.3, contrast: 1.05, vignette: 0.5 },
-    motion: { swayX: 16, swayHz: 0.55, bounceY: 14, bounceHz: 1.1, roll: 1.0, lean: 5, scalePulse: 0.018 },
+    dancer: '/templates/scenes/dancer-side-grind.webm',
+    faceHole: { cx: 660, cy: 175, rx: 80, ry: 85, rotation: -25 },
   },
 ]
 
