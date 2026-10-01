@@ -33,6 +33,7 @@ export function SceneCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [assets, setAssets] = useState<DrawAssets | null>(null)
   const [assetsError, setAssetsError] = useState<string | null>(null)
+  const [debug, setDebug] = useState<string>('init')
   const [calibration, setCalibration] = useState<Calibration>(DEFAULT_CAL)
   const rafRef = useRef<number | null>(null)
   const startRef = useRef<number>(0)
@@ -50,74 +51,104 @@ export function SceneCanvas({
     if (!scene) {
       setAssetsError(`unknown scene: ${sceneId}`)
       setAssets(null)
+      setDebug(`unknown scene: ${sceneId}`)
       return
     }
     sceneRef.current = scene
     setAssetsError(null)
+    setDebug(`loading scene: ${sceneId}`)
 
     let cancelled = false
     Promise.all([
-      loadImage(scene.background),
-      loadImage(scene.dancer),
-      scene.hairOverlay ? loadImage(scene.hairOverlay) : Promise.resolve(null),
+      loadImage(scene.background, `bg:${scene.background}`),
+      loadImage(scene.dancer, `dancer:${scene.dancer}`),
+      scene.hairOverlay ? loadImage(scene.hairOverlay, `hair:${scene.hairOverlay}`) : Promise.resolve(null),
     ]).then(([bg, dancer, hair]) => {
       if (cancelled) return
-      // We don't have a face patch yet — set assets with a placeholder so the loop can run
+      console.log('[SceneCanvas] scene loaded', { sceneId, bg: bg?.naturalWidth, dancer: dancer?.naturalWidth, hair: hair?.naturalWidth })
       setAssets((prev) => ({
         background: bg!,
         dancer: dancer!,
         hairOverlay: hair ?? undefined,
         facePatch: prev?.facePatch ?? makePlaceholderPatch(),
       }))
+      setDebug(`assets set: bg=${bg?.naturalWidth}x${bg?.naturalHeight} dancer=${dancer?.naturalWidth}x${dancer?.naturalHeight}`)
     }).catch((err) => {
       if (cancelled) return
+      console.error('[SceneCanvas] scene load failed:', err)
       setAssetsError(`failed to load scene assets: ${err instanceof Error ? err.message : err}`)
+      setDebug(`load error: ${err instanceof Error ? err.message : err}`)
     })
 
     return () => { cancelled = true }
   }, [sceneId])
 
-  // Whenever the face patch changes, re-run color transfer and update assets
+  // Whenever the face patch changes, run color transfer and update assets.
+  // Skip the transfer if it would throw — that path used to wipe the face patch.
   useEffect(() => {
     if (!assets || !facePatch) return
     const scene = sceneRef.current
     if (!scene) return
 
-    // Sample a forehead ellipse from the dancer's face region (top center of dancerLayout)
-    const dancerCtx = document.createElement('canvas')
-    dancerCtx.width = assets.dancer.naturalWidth
-    dancerCtx.height = assets.dancer.naturalHeight
-    const dctx = dancerCtx.getContext('2d')
-    if (!dctx) return
-    dctx.drawImage(assets.dancer, 0, 0)
-
-    // The dancer's face region in dancer-local coords: dancerLayout.x + faceHole.cx*w, similar for y
+    // Sample a forehead ellipse from the dancer image. Use a small inner ellipse
+    // sized in pixels so we never go out of bounds.
     const dl = scene.dancerLayout
     const fh = scene.faceHole
     const dancerFaceCx = dl.x + fh.cx * dl.w
     const dancerFaceCy = dl.y + fh.cy * dl.h
-    const dancerFaceRx = fh.rx * dl.w * 0.4   // sample a small inner ellipse
-    const dancerFaceRy = fh.ry * dl.h * 0.4
+    // Tight inner ellipse, half the size of the face hole, never larger than the image
+    const dancerFaceRx = Math.max(2, Math.min(fh.rx * dl.w * 0.35, dl.w * fh.cx - 2, (1 - fh.cx) * dl.w - 2))
+    const dancerFaceRy = Math.max(2, Math.min(fh.ry * dl.h * 0.35, dl.h * fh.cy - 2, (1 - fh.cy) * dl.h - 2))
 
-    let targetStats
-    try {
-      targetStats = sampleEllipse(dctx, dancerFaceCx, dancerFaceCy, dancerFaceRx, dancerFaceRy)
-    } catch {
-      // Sample area out of bounds; skip transfer
+    if (dancerFaceCx - dancerFaceRx < 0 || dancerFaceCy - dancerFaceRy < 0 ||
+        dancerFaceCx + dancerFaceRx > assets.dancer.naturalWidth ||
+        dancerFaceCy + dancerFaceRy > assets.dancer.naturalHeight) {
+      // Fallback: skip transfer, just use the unprocessed patch
+      console.warn('[SceneCanvas] face region out of bounds, skipping color transfer')
       setAssets((prev) => prev ? { ...prev, facePatch } : prev)
       return
     }
 
-    // Sample source stats from the face patch (forehead area, top-center)
+    const dancerCanvas = document.createElement('canvas')
+    dancerCanvas.width = assets.dancer.naturalWidth
+    dancerCanvas.height = assets.dancer.naturalHeight
+    const dctx = dancerCanvas.getContext('2d', { willReadFrequently: true })
+    if (!dctx) {
+      setAssets((prev) => prev ? { ...prev, facePatch } : prev)
+      return
+    }
+    dctx.drawImage(assets.dancer, 0, 0)
+    let targetStats
+    try {
+      targetStats = sampleEllipse(dctx, dancerFaceCx, dancerFaceCy, dancerFaceRx, dancerFaceRy)
+    } catch (err) {
+      console.warn('[SceneCanvas] sampleEllipse threw:', err)
+      setAssets((prev) => prev ? { ...prev, facePatch } : prev)
+      return
+    }
+
+    // Guard: if the target sample is unreasonably dark (< 40 mean luma) or has near-zero
+    // variance, skip the transfer — sampling a shadow region of the plate would otherwise
+    // crush the face to near-black, making the user see a dark "floating PFP".
+    const targetLuma = 0.299 * targetStats.mean[0] + 0.587 * targetStats.mean[1] + 0.114 * targetStats.mean[2]
+    const targetMaxStd = Math.max(...targetStats.std)
+    if (targetLuma < 40 || targetMaxStd < 5) {
+      console.warn('[SceneCanvas] target sample too dark/flat, skipping color transfer', { targetLuma, targetMaxStd })
+      setAssets((prev) => prev ? { ...prev, facePatch } : prev)
+      return
+    }
+
     const patchCtx = facePatch.canvas.getContext('2d', { willReadFrequently: true })
-    if (!patchCtx) return
+    if (!patchCtx) {
+      setAssets((prev) => prev ? { ...prev, facePatch } : prev)
+      return
+    }
     const patchSize = facePatch.canvas.width
     const sourceStats = sampleEllipse(patchCtx, patchSize / 2, patchSize * 0.35, patchSize * 0.18, patchSize * 0.18)
-
     applyColorTransfer(patchCtx, sourceStats, targetStats, patchSize, patchSize)
 
     setAssets((prev) => prev ? { ...prev, facePatch } : prev)
-  }, [facePatch])
+  }, [facePatch, assets])
 
   // RAF render loop
   useEffect(() => {
@@ -127,14 +158,25 @@ export function SceneCanvas({
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
+    console.log('[SceneCanvas] RAF loop starting, assets:', {
+      bg: `${assets.background.naturalWidth}x${assets.background.naturalHeight}`,
+      dancer: `${assets.dancer.naturalWidth}x${assets.dancer.naturalHeight}`,
+      facePatch: `${assets.facePatch.canvas.width}x${assets.facePatch.canvas.height}`,
+    })
+
     startRef.current = performance.now()
 
+    let frameCount = 0
     const loop = (now: number) => {
       const scene = sceneRef.current
       if (!scene) return
       const t = (now - startRef.current) / 1000
       const motion = computeMotion(scene, t)
       drawScene(ctx, scene, assets, motion, calRef.current)
+      frameCount++
+      if (frameCount === 1) {
+        console.log('[SceneCanvas] first frame drawn')
+      }
       rafRef.current = requestAnimationFrame(loop)
     }
     rafRef.current = requestAnimationFrame(loop)
@@ -144,8 +186,7 @@ export function SceneCanvas({
     }
   }, [assets])
 
-  // Expose the calibration state setter via a custom event so CalibratePanel can drive it
-  // (Cleaner than prop-drilling through ScenePicker; App composition handles it.)
+  // Custom event bridge for calibrate panel
   useEffect(() => {
     const handler = (e: Event) => {
       const next = (e as CustomEvent<Calibration>).detail
@@ -163,6 +204,10 @@ export function SceneCanvas({
         height={CANVAS_H}
         className="w-full h-full block"
       />
+      {/* Debug overlay (temporary) */}
+      <div className="absolute top-2 left-2 text-xs text-teal-glow bg-ink-900/80 px-2 py-1 rounded pointer-events-none">
+        {debug}
+      </div>
       {assetsError && (
         <div className="absolute inset-0 flex items-center justify-center bg-ink-900/80">
           <p className="text-red-400 text-sm lowercase px-4 text-center">{assetsError}</p>
@@ -182,19 +227,25 @@ export function SceneCanvas({
   )
 }
 
-// Helper: load an HTMLImageElement from a URL, returns promise
-function loadImage(src: string): Promise<HTMLImageElement> {
+function loadImage(src: string, label: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.crossOrigin = 'anonymous'
-    img.onload = () => resolve(img)
-    img.onerror = () => reject(new Error(`failed to load ${src}`))
+    img.onload = () => {
+      if (img.naturalWidth === 0 || img.naturalHeight === 0) {
+        reject(new Error(`${label}: loaded but zero-size`))
+        return
+      }
+      resolve(img)
+    }
+    img.onerror = (e) => {
+      console.error('[loadImage] failed:', label, e)
+      reject(new Error(`failed to load ${label}`))
+    }
     img.src = src
   })
 }
 
-// Helper: placeholder 1x1 transparent canvas so the RAF loop has something to draw
-// before the user uploads a photo
 function makePlaceholderPatch(): FacePatch {
   const canvas = document.createElement('canvas')
   canvas.width = 64

@@ -65,20 +65,6 @@ export function drawScene(
   )
   ctx.restore()
 
-  // Apply the elliptical alpha mask to the face patch by re-drawing it with
-  // composite operation 'destination-in' restricted to the ellipse.
-  // This blends the patch's edges into the dancer cleanly.
-  ctx.save()
-  ctx.translate(ovalCx, ovalCy)
-  ctx.rotate(ovalRot)
-  ctx.beginPath()
-  ctx.ellipse(0, 0, ovalRx, ovalRy, 0, 0, Math.PI * 2)
-  ctx.globalCompositeOperation = 'destination-in'
-  // The mask is an ellipse — draw it as a filled shape and let destination-in do the work
-  ctx.fillStyle = '#fff'
-  ctx.fill()
-  ctx.restore()
-
   // Hair overlay AFTER face (so bangs sit on top of the user's face patch)
   if (assets.hairOverlay) {
     ctx.drawImage(assets.hairOverlay, dl.x, dl.y, dl.w, dl.h)
