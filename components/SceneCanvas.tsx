@@ -31,7 +31,7 @@ export function SceneCanvas({
   useEffect(() => { cropTightnessRef.current = cropTightness }, [cropTightness])
   useEffect(() => { bgImgRef.current = bgImg }, [bgImg])
 
-  // Load background + dancer video whenever scene changes
+  // Load background whenever the scene changes
   useEffect(() => {
     const scene = getScene(sceneId)
     if (!scene) {
@@ -39,6 +39,7 @@ export function SceneCanvas({
       return
     }
     setError(null)
+    setBgImg(null)
     let cancelled = false
 
     const bgImgEl = new Image()
@@ -46,30 +47,23 @@ export function SceneCanvas({
     bgImgEl.onload = () => { if (!cancelled) setBgImg(bgImgEl) }
     bgImgEl.onerror = () => { if (!cancelled) setError(`failed to load bg: ${scene.background}`) }
     bgImgEl.src = scene.background
+  }, [sceneId])
 
-    const vid = document.createElement('video')
+  // Update the video's src when the scene changes. The <video> element is mounted in the JSX,
+  // so the browser decodes and plays it normally. We just swap the src.
+  useEffect(() => {
+    const scene = getScene(sceneId)
+    if (!scene) return
+    const vid = videoRef.current
+    if (!vid) return
     vid.src = scene.dancer
-    vid.crossOrigin = 'anonymous'
-    vid.loop = true
-    vid.muted = true
-    vid.playsInline = true
-    vid.preload = 'auto'
-    videoRef.current = vid
-    vid.onloadeddata = () => { /* video ready, RAF will pick it up */ }
-    vid.onerror = () => { if (!cancelled) setError(`failed to load video: ${scene.dancer}`) }
+    vid.load()
     vid.play().catch((err) => {
       console.warn('[SceneCanvas] video play() rejected:', err)
     })
-
-    return () => {
-      cancelled = true
-      vid.pause()
-      vid.removeAttribute('src')
-      vid.load()
-    }
   }, [sceneId])
 
-  // RAF loop — drives video frames into the canvas
+  // RAF loop — draws bg + current video frame + face patch (if any) every frame
   useEffect(() => {
     const loop = () => {
       const bg = bgImgRef.current
@@ -85,8 +79,6 @@ export function SceneCanvas({
       ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
       if (bg) ctx.drawImage(bg, 0, 0, CANVAS_W, CANVAS_H)
       if (scene && video && video.readyState >= 2) {
-        // Compute the face-hole position for the current video frame, so the patch tracks
-        // the dancer's head across the loop.
         const dur = video.duration > 0 ? video.duration : 1
         const t = (video.currentTime % dur) / dur
         const fh = faceHoleAt(scene, t)
@@ -112,6 +104,16 @@ export function SceneCanvas({
         width={CANVAS_W}
         height={CANVAS_H}
         className="w-full h-full block"
+      />
+      {/* Hidden video element — must be in DOM for browser to decode frames. */}
+      <video
+        ref={videoRef}
+        loop
+        muted
+        playsInline
+        crossOrigin="anonymous"
+        className="absolute opacity-0 pointer-events-none w-0 h-0"
+        aria-hidden="true"
       />
       {error && (
         <div className="absolute inset-0 flex items-center justify-center bg-ink-900/80">
