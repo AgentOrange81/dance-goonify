@@ -26,10 +26,10 @@ const CLUB_ROOM = '/templates/scenes/club-room-empty.webp'
 //   front: cx 722-745 (mean ~731), cy 180-210 (small head bob)
 //   side:  cx 615-631 (mean ~623), cy 153-190 (small head bob)
 //
-// Loop wrap is invisible because the source video was trimmed to a natural
-// cycle boundary (frame 45 for front, frame 48 for side) with a 6-frame
-// xfade at the seam. The original measurement agent reported x=699 for front,
-// which was ~40px off — that was a bad sample. This set is correct.
+// IMPORTANT: t=0 and t=1.0 keyframes MUST match exactly, because the video
+// loops the dancer plate back to frame_001 every cycle. If the oval position
+// at t=1.0 differs from t=0, the face patch will visually jump each loop.
+// We set t=1.0 = t=0 explicitly.
 
 export const SCENES: Scene[] = [
   {
@@ -44,7 +44,7 @@ export const SCENES: Scene[] = [
       { t: 0.50, cx: 728, cy: 182, rx: 50, ry: 60, rotation: -8 },
       { t: 0.68, cx: 725, cy: 189, rx: 50, ry: 60, rotation: -8 },
       { t: 0.84, cx: 722, cy: 205, rx: 50, ry: 60, rotation: -8 },
-      { t: 1.00, cx: 726, cy: 210, rx: 50, ry: 60, rotation: -8 },
+      { t: 1.00, cx: 744, cy: 206, rx: 50, ry: 60, rotation: -8 },
     ],
   },
   {
@@ -59,7 +59,7 @@ export const SCENES: Scene[] = [
       { t: 0.50, cx: 630, cy: 188, rx: 40, ry: 60, rotation: -25 },
       { t: 0.67, cx: 622, cy: 181, rx: 40, ry: 60, rotation: -25 },
       { t: 0.84, cx: 627, cy: 171, rx: 40, ry: 60, rotation: -25 },
-      { t: 1.00, cx: 621, cy: 157, rx: 40, ry: 60, rotation: -25 },
+      { t: 1.00, cx: 619, cy: 166, rx: 40, ry: 60, rotation: -25 },
     ],
   },
 ]
