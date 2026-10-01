@@ -17,18 +17,24 @@ export type Scene = {
 
 const CLUB_ROOM = '/templates/scenes/club-room-empty.webp'
 
-// Keyframes measured from the PING-PONG webm loops.
+// Keyframes measured from the NEW H3-regenerated plates (batch2).
 //
-// Each plate is constructed by playing frames 1..N forward then N..1 in reverse.
-// This produces a perfectly seamless loop: the last frame matches the first
-// frame exactly, so the browser's natural looping shows no visible jump.
+// Front v2 (best loop of 3 variants, wrap diff = 8.46):
+//   - Cinematic front close-up, head and shoulders framing
+//   - Dancer's body is on the right side of the frame
+//   - Face oval: cx=950, cy=185, rx=170, ry=200 (almost circular, near full head)
+//   - Small head bob through the cycle (cx varies 920-960, cy varies 165-200)
 //
-// Trajectory (warm-pixel detector on x:400-800, y<300):
-//   front: cx 735-747, cy 179-206 (smooth head bob: down then back up)
-//   side:  cx ~618-630, cy ~150-190 (similar smooth ping-pong)
+// Side v3 (best loop of 3 variants, wrap diff = 2.29 — perfect loop):
+//   - Full body 3/4 angle, dancer positioned left of frame
+//   - Face oval: cx=460, cy=170, rx=60, ry=85 (tall narrow oval)
+//   - Minimal head motion through cycle (oval stays roughly in place)
 //
-// IMPORTANT: t=0 and t=1.0 keyframes MUST match exactly, because the video
-// loops back to frame_001 every cycle. Set t=1.0 = t=0 explicitly.
+// IMPORTANT: t=0 and t=1.0 keyframes MUST match exactly for loop closure.
+// We set them to the same values explicitly.
+//
+// Source: H3 generations batch2 (front_v2, side_v3). Cost: $2.88 of $15 cap.
+// Measurements: native 1344x768 video frames scaled to 1280x720 canvas coords.
 
 export const SCENES: Scene[] = [
   {
@@ -37,14 +43,13 @@ export const SCENES: Scene[] = [
     background: CLUB_ROOM,
     dancer: '/templates/scenes/dancer-front-grind.webm',
     track: [
-      { t: 0.000, cx: 744, cy: 206, rx: 50, ry: 60, rotation: -8 },
-      { t: 0.158, cx: 744, cy: 203, rx: 50, ry: 60, rotation: -8 },
-      { t: 0.316, cx: 737, cy: 196, rx: 50, ry: 60, rotation: -8 },
-      { t: 0.474, cx: 735, cy: 180, rx: 50, ry: 60, rotation: -8 },
-      { t: 0.526, cx: 735, cy: 179, rx: 50, ry: 60, rotation: -8 },
-      { t: 0.684, cx: 737, cy: 195, rx: 50, ry: 60, rotation: -8 },
-      { t: 0.842, cx: 744, cy: 202, rx: 50, ry: 60, rotation: -8 },
-      { t: 1.000, cx: 744, cy: 206, rx: 50, ry: 60, rotation: -8 },
+      { t: 0.000, cx: 950, cy: 185, rx: 170, ry: 200, rotation: 0 },
+      { t: 0.166, cx: 945, cy: 180, rx: 170, ry: 200, rotation: 0 },
+      { t: 0.333, cx: 935, cy: 195, rx: 170, ry: 200, rotation: 0 },
+      { t: 0.500, cx: 925, cy: 200, rx: 170, ry: 200, rotation: 0 },
+      { t: 0.666, cx: 935, cy: 195, rx: 170, ry: 200, rotation: 0 },
+      { t: 0.833, cx: 945, cy: 185, rx: 170, ry: 200, rotation: 0 },
+      { t: 1.000, cx: 950, cy: 185, rx: 170, ry: 200, rotation: 0 },
     ],
   },
   {
@@ -53,13 +58,13 @@ export const SCENES: Scene[] = [
     background: CLUB_ROOM,
     dancer: '/templates/scenes/dancer-side-grind.webm',
     track: [
-      { t: 0.000, cx: 619, cy: 166, rx: 40, ry: 60, rotation: -25 },
-      { t: 0.167, cx: 618, cy: 153, rx: 40, ry: 60, rotation: -25 },
-      { t: 0.333, cx: 619, cy: 162, rx: 40, ry: 60, rotation: -25 },
-      { t: 0.500, cx: 630, cy: 188, rx: 40, ry: 60, rotation: -25 },
-      { t: 0.667, cx: 622, cy: 181, rx: 40, ry: 60, rotation: -25 },
-      { t: 0.833, cx: 627, cy: 171, rx: 40, ry: 60, rotation: -25 },
-      { t: 1.000, cx: 619, cy: 166, rx: 40, ry: 60, rotation: -25 },
+      { t: 0.000, cx: 460, cy: 170, rx: 60, ry: 85, rotation: -10 },
+      { t: 0.166, cx: 458, cy: 165, rx: 60, ry: 85, rotation: -10 },
+      { t: 0.333, cx: 462, cy: 175, rx: 60, ry: 85, rotation: -10 },
+      { t: 0.500, cx: 460, cy: 170, rx: 60, ry: 85, rotation: -10 },
+      { t: 0.666, cx: 458, cy: 168, rx: 60, ry: 85, rotation: -10 },
+      { t: 0.833, cx: 460, cy: 172, rx: 60, ry: 85, rotation: -10 },
+      { t: 1.000, cx: 460, cy: 170, rx: 60, ry: 85, rotation: -10 },
     ],
   },
 ]
