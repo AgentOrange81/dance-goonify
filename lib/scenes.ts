@@ -12,16 +12,21 @@ export type Scene = {
   title: string
   background: string
   dancer: string
-  track: FaceHoleKeyframe[]  // 3+ keyframes, linearly interpolated per frame
+  track: FaceHoleKeyframe[]  // 3+ keyframes, linearly interpolated per draw frame
 }
 
 const CLUB_ROOM = '/templates/scenes/club-room-empty.webp'
 
-// Keyframe data was sampled from the H3-generated videos on 2026-10-01.
-// Each scene has 3 keyframes (0%, 50%, 100%) interpolated linearly per draw. If the face
-// drifts visibly off the dancer's face in any scene, add more keyframes here.
+// Keyframe data measured from the H3 videos on 2026-10-01 by overlaying a coord grid
+// and reading the dancer's blank oval face position on each sampled frame.
+//
+// The oval moves only slightly (~30px sway, mostly vertical) because the H3 video is
+// a 6-second looped clip. We track with 4 keyframes per scene — enough to capture
+// the up/down motion.
+//
+// Front-grind: oval rotated -8° (slight head tilt). rx≈65, ry≈55 (wider than tall).
+// Side-grind: oval rotated -25° (3/4 angle). rx≈40, ry≈60 (taller than wide).
 
-// front-grind: dancer's head bobs vertically by ~20px over 6s. Side-to-side motion is small.
 export const SCENES: Scene[] = [
   {
     id: 'club-front-grind',
@@ -29,9 +34,10 @@ export const SCENES: Scene[] = [
     background: CLUB_ROOM,
     dancer: '/templates/scenes/dancer-front-grind.webm',
     track: [
-      { t: 0.00, cx: 620, cy: 180, rx: 85, ry: 110, rotation: -8 },
-      { t: 0.50, cx: 615, cy: 195, rx: 85, ry: 112, rotation: -8 },
-      { t: 1.00, cx: 625, cy: 175, rx: 85, ry: 112, rotation: -8 },
+      { t: 0.00, cx: 595, cy: 185, rx: 65, ry: 55, rotation: -8 },
+      { t: 0.33, cx: 605, cy: 185, rx: 65, ry: 55, rotation: -8 },
+      { t: 0.66, cx: 585, cy: 185, rx: 65, ry: 55, rotation: -8 },
+      { t: 1.00, cx: 615, cy: 175, rx: 65, ry: 55, rotation: -8 },
     ],
   },
   {
@@ -40,9 +46,10 @@ export const SCENES: Scene[] = [
     background: CLUB_ROOM,
     dancer: '/templates/scenes/dancer-side-grind.webm',
     track: [
-      { t: 0.00, cx: 660, cy: 165, rx: 85, ry: 100, rotation: -25 },
-      { t: 0.50, cx: 658, cy: 178, rx: 85, ry: 102, rotation: -25 },
-      { t: 1.00, cx: 662, cy: 170, rx: 85, ry: 100, rotation: -25 },
+      { t: 0.00, cx: 600, cy: 140, rx: 40, ry: 60, rotation: -25 },
+      { t: 0.33, cx: 600, cy: 140, rx: 40, ry: 60, rotation: -25 },
+      { t: 0.66, cx: 590, cy: 140, rx: 40, ry: 60, rotation: -25 },
+      { t: 1.00, cx: 600, cy: 140, rx: 40, ry: 60, rotation: -25 },
     ],
   },
 ]
@@ -61,7 +68,6 @@ export function faceHoleAt(scene: Scene, t: number): FaceHoleKeyframe {
   if (k.length === 1 || t <= k[0].t) return k[0]
   if (t >= k[k.length - 1].t) return k[k.length - 1]
 
-  // Find the two surrounding keyframes
   for (let i = 0; i < k.length - 1; i++) {
     const a = k[i], b = k[i + 1]
     if (t >= a.t && t <= b.t) {
