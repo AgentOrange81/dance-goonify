@@ -120,11 +120,6 @@ export function SceneCanvas({
           <p className="text-red-400 text-sm lowercase px-4 text-center">{error}</p>
         </div>
       )}
-      {!facePatch && !error && (
-        <div className="absolute bottom-3 left-3 bg-ink-900/70 rounded px-3 py-1.5 pointer-events-none">
-          <p className="text-gray-400 text-xs lowercase">drop a photo to put your face here</p>
-        </div>
-      )}
       {facePatch && !error && (
         <div className="absolute bottom-3 left-3 right-3 bg-ink-900/80 rounded px-3 py-2">
           <div className="flex items-center gap-3">

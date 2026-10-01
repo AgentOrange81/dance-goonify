@@ -63,9 +63,6 @@ export default function HomePage() {
         {/* Right column: canvas */}
         <div className="lg:col-span-2 space-y-4">
           <SceneCanvas sceneId={sceneId} facePatch={facePatch} />
-          <p className="text-xs text-gray-600 text-center lowercase">
-            18+ only. by using this site you confirm you have rights to the uploaded face.
-          </p>
         </div>
       </div>
     </main>
