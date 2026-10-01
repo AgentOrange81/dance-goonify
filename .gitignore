@@ -38,3 +38,6 @@ next-env.d.ts
 
 # face-api.js model cache (we ship weights in public/templates/models/)
 .tmp-models/
+
+# session-internal hermes research artifacts (kept in docs/research/ for public)
+.hermes/
