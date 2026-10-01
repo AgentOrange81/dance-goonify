@@ -21,26 +21,36 @@ export function drawScene(
 ): void {
   const cal = calibration ?? {}
 
+  // Clear + base layer
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
 
   // Background — fills canvas, no transform
   ctx.drawImage(assets.background, 0, 0, CANVAS_W, CANVAS_H)
 
-  // Apply motion + draw dancer centered
+  // The dancer is drawn at dancerLayout (x, y) with the given width and height.
+  // The motion transform is applied around the dancer's center.
   const dl = scene.dancerLayout
+  const dancerCx = dl.x + dl.w / 2
+  const dancerCy = dl.y + dl.h / 2
   ctx.save()
-  ctx.translate(CANVAS_W / 2 + motion.dx, CANVAS_H / 2 + motion.dy)
+  ctx.translate(dancerCx + motion.dx, dancerCy + motion.dy)
   ctx.rotate(((motion.dRoll + (cal.rotation ?? 0)) * Math.PI) / 180)
   ctx.scale(motion.dScale, motion.dScale)
   ctx.drawImage(assets.dancer, -dl.w / 2, -dl.h / 2, dl.w, dl.h)
 
-  // Composite the face patch inside the oval
+  // Face patch composite — inside the face hole oval.
+  // ovalCx/ovalCy are in CANVAS coords (relative to the canvas, not the translated origin),
+  // because we restore the transform and re-translate to oval-relative coords below.
   const fh = scene.faceHole
-  const ovalCx = dl.x + fh.cx * dl.w + (cal.dx ?? 0)
-  const ovalCy = dl.y + fh.cy * dl.h + (cal.dy ?? 0)
+  const ovalCx = dancerCx + (fh.cx - 0.5) * dl.w + (cal.dx ?? 0)
+  const ovalCy = dancerCy + (fh.cy - 0.5) * dl.h + (cal.dy ?? 0)
   const ovalRx = fh.rx * dl.w * (cal.rxMul ?? 1)
   const ovalRy = fh.ry * dl.h * (cal.ryMul ?? 1)
   const ovalRot = ((fh.rotation + (cal.rotation ?? 0)) * Math.PI) / 180
+
+  // Apply rotation around the oval center, then clip to the ellipse.
+  // The clip is in CANVAS coords because we restore the dancer transform first.
+  ctx.restore()  // undo the dancer translate/rotate/scale
 
   ctx.save()
   ctx.translate(ovalCx, ovalCy)
@@ -49,13 +59,10 @@ export function drawScene(
   ctx.ellipse(0, 0, ovalRx, ovalRy, 0, 0, Math.PI * 2)
   ctx.clip()
 
-  // The face patch was cropped as a square (size = its canvas width).
-  // We want to fit it inside the ellipse. Scale so the ellipse's smaller dim
-  // equals the patch size; this fills the oval nicely.
+  // Draw the face patch. The patch canvas is square (size = patch canvas width).
+  // Scale so the smaller oval dim equals the patch width — fills the oval.
   const patchSize = assets.facePatch.canvas.width
-  const targetSize = Math.min(ovalRx, ovalRy) * 2
-  const drawSize = targetSize
-  // Center the patch on the oval center
+  const drawSize = Math.min(ovalRx, ovalRy) * 2
   ctx.drawImage(
     assets.facePatch.canvas,
     -drawSize / 2,
@@ -65,17 +72,16 @@ export function drawScene(
   )
   ctx.restore()
 
-  // Hair overlay AFTER face (so bangs sit on top of the user's face patch)
+  // Hair overlay AFTER face (so bangs sit on top of the user's face patch).
+  // Drawn in CANVAS coords, no transform.
   if (assets.hairOverlay) {
     ctx.drawImage(assets.hairOverlay, dl.x, dl.y, dl.w, dl.h)
   }
 
-  ctx.restore()  // undo dancer transform
-
-  // Vignette on top of everything
-  if (scene.grade.vignette > 0) {
-    applyVignette(ctx, scene.grade.vignette)
-  }
+  // Vignette on top of everything — disabled for now while debugging black screen.
+  // if (scene.grade.vignette > 0) {
+  //   applyVignette(ctx, scene.grade.vignette)
+  // }
 }
 
 function applyVignette(ctx: CanvasRenderingContext2D, strength: number): void {
