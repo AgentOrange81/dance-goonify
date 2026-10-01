@@ -127,16 +127,22 @@ export function SceneCanvas({
       const fp = facePatchRef.current
       const scene = getScene(sceneIdRef.current)
       const canvas = canvasRef.current
-      if (bg && video && fp && scene && canvas && video.readyState >= 2) {
-        const ctx = canvas.getContext('2d')
-        if (ctx) {
-          drawScene(ctx, scene, {
-            background: bg,
-            dancer: video,
-            facePatch: fp,
-            cropTightness: cropTightnessRef.current,
-          } as DrawAssets)
-        }
+      const ctx = canvas?.getContext('2d')
+      if (!ctx) {
+        rafRef.current = requestAnimationFrame(loop)
+        return
+      }
+      // Always draw the bg
+      ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
+      if (bg) ctx.drawImage(bg, 0, 0, CANVAS_W, CANVAS_H)
+      // Draw the dancer only when there's a face to put on it
+      if (fp && scene && video && video.readyState >= 2) {
+        drawScene(ctx, scene, {
+          background: bg!,
+          dancer: video,
+          facePatch: fp,
+          cropTightness: cropTightnessRef.current,
+        } as DrawAssets)
       }
       rafRef.current = requestAnimationFrame(loop)
     }
@@ -160,8 +166,8 @@ export function SceneCanvas({
         </div>
       )}
       {!facePatch && !error && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <p className="text-gray-500 text-sm lowercase">drop a photo to begin</p>
+        <div className="absolute bottom-3 left-3 bg-ink-900/70 rounded px-3 py-1.5 pointer-events-none">
+          <p className="text-gray-400 text-xs lowercase">drop a photo to begin</p>
         </div>
       )}
       {facePatch && !error && (
