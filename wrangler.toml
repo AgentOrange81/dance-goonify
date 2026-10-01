@@ -1,0 +1,14 @@
+name = "dance-goonify"
+compatibility_date = "2025-01-15"
+pages_build_output_dir = ".next"
+
+# Custom domain bindings live in Cloudflare dashboard, not here.
+# Environment variable wiring:
+#   LAPDANCE_WORKER_URL  - if set, /api/lapdance proxies to this worker (Path B)
+#                          when unset, /api/lapdance returns 501 { preview: true }
+#
+# R2 binding (templates + models) — added when we wire the bucket:
+#   [[r2_buckets]]
+#   binding = "DANCE_TEMPLATES"
+#   bucket_name = "goonify-gallery"
+#   prefix = "dance/templates/"
