@@ -17,19 +17,18 @@ export type Scene = {
 
 const CLUB_ROOM = '/templates/scenes/club-room-empty.webp'
 
-// Keyframes measured from the trimmed + crossfaded webm loops (see
-// .hermes/measured-keyframes.json for raw data).
+// Keyframes measured from the PING-PONG webm loops.
 //
-// The trimmed loops are short (~1.6s for front, ~1.75s for side). Each loop
-// contains one full hip-grind cycle. Tracking the oval center frame-by-frame
-// on the trimmed videos (warm-pixel filter on x:400-800, y<300) gives:
-//   front: cx 722-745 (mean ~731), cy 180-210 (small head bob)
-//   side:  cx 615-631 (mean ~623), cy 153-190 (small head bob)
+// Each plate is constructed by playing frames 1..N forward then N..1 in reverse.
+// This produces a perfectly seamless loop: the last frame matches the first
+// frame exactly, so the browser's natural looping shows no visible jump.
+//
+// Trajectory (warm-pixel detector on x:400-800, y<300):
+//   front: cx 735-747, cy 179-206 (smooth head bob: down then back up)
+//   side:  cx ~618-630, cy ~150-190 (similar smooth ping-pong)
 //
 // IMPORTANT: t=0 and t=1.0 keyframes MUST match exactly, because the video
-// loops the dancer plate back to frame_001 every cycle. If the oval position
-// at t=1.0 differs from t=0, the face patch will visually jump each loop.
-// We set t=1.0 = t=0 explicitly.
+// loops back to frame_001 every cycle. Set t=1.0 = t=0 explicitly.
 
 export const SCENES: Scene[] = [
   {
@@ -38,13 +37,14 @@ export const SCENES: Scene[] = [
     background: CLUB_ROOM,
     dancer: '/templates/scenes/dancer-front-grind.webm',
     track: [
-      { t: 0.00, cx: 744, cy: 206, rx: 50, ry: 60, rotation: -8 },
-      { t: 0.16, cx: 743, cy: 203, rx: 50, ry: 60, rotation: -8 },
-      { t: 0.32, cx: 736, cy: 195, rx: 50, ry: 60, rotation: -8 },
-      { t: 0.50, cx: 728, cy: 182, rx: 50, ry: 60, rotation: -8 },
-      { t: 0.68, cx: 725, cy: 189, rx: 50, ry: 60, rotation: -8 },
-      { t: 0.84, cx: 722, cy: 205, rx: 50, ry: 60, rotation: -8 },
-      { t: 1.00, cx: 744, cy: 206, rx: 50, ry: 60, rotation: -8 },
+      { t: 0.000, cx: 744, cy: 206, rx: 50, ry: 60, rotation: -8 },
+      { t: 0.158, cx: 744, cy: 203, rx: 50, ry: 60, rotation: -8 },
+      { t: 0.316, cx: 737, cy: 196, rx: 50, ry: 60, rotation: -8 },
+      { t: 0.474, cx: 735, cy: 180, rx: 50, ry: 60, rotation: -8 },
+      { t: 0.526, cx: 735, cy: 179, rx: 50, ry: 60, rotation: -8 },
+      { t: 0.684, cx: 737, cy: 195, rx: 50, ry: 60, rotation: -8 },
+      { t: 0.842, cx: 744, cy: 202, rx: 50, ry: 60, rotation: -8 },
+      { t: 1.000, cx: 744, cy: 206, rx: 50, ry: 60, rotation: -8 },
     ],
   },
   {
@@ -53,13 +53,13 @@ export const SCENES: Scene[] = [
     background: CLUB_ROOM,
     dancer: '/templates/scenes/dancer-side-grind.webm',
     track: [
-      { t: 0.00, cx: 619, cy: 166, rx: 40, ry: 60, rotation: -25 },
-      { t: 0.17, cx: 618, cy: 153, rx: 40, ry: 60, rotation: -25 },
-      { t: 0.34, cx: 619, cy: 162, rx: 40, ry: 60, rotation: -25 },
-      { t: 0.50, cx: 630, cy: 188, rx: 40, ry: 60, rotation: -25 },
-      { t: 0.67, cx: 622, cy: 181, rx: 40, ry: 60, rotation: -25 },
-      { t: 0.84, cx: 627, cy: 171, rx: 40, ry: 60, rotation: -25 },
-      { t: 1.00, cx: 619, cy: 166, rx: 40, ry: 60, rotation: -25 },
+      { t: 0.000, cx: 619, cy: 166, rx: 40, ry: 60, rotation: -25 },
+      { t: 0.167, cx: 618, cy: 153, rx: 40, ry: 60, rotation: -25 },
+      { t: 0.333, cx: 619, cy: 162, rx: 40, ry: 60, rotation: -25 },
+      { t: 0.500, cx: 630, cy: 188, rx: 40, ry: 60, rotation: -25 },
+      { t: 0.667, cx: 622, cy: 181, rx: 40, ry: 60, rotation: -25 },
+      { t: 0.833, cx: 627, cy: 171, rx: 40, ry: 60, rotation: -25 },
+      { t: 1.000, cx: 619, cy: 166, rx: 40, ry: 60, rotation: -25 },
     ],
   },
 ]
