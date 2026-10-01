@@ -41,7 +41,9 @@ export function cropOval(
   const cy = size / 2
   const rx = newOll.rx
   const ry = newOll.ry
-  const featherPx = Math.max(2, size * 0.03)
+  // Feathering: smooth alpha falloff over a band whose width is proportional to
+  // the oval size. Wider feather = softer edge = less visible seam against the dancer.
+  const featherPx = Math.max(8, size * 0.06)
 
   const img = ctx.getImageData(0, 0, size, size)
   const d = img.data
@@ -56,7 +58,10 @@ export function cropOval(
       } else if (dist >= 1 + featherPx / Math.min(rx, ry)) {
         a = 0
       } else {
-        a = Math.round(255 * (1 - (dist - 1) * Math.min(rx, ry) / featherPx))
+        // Smoothstep alpha falloff: 0 -> 1 -> 0 with cubic ease
+        const u = (dist - 1) * Math.min(rx, ry) / featherPx
+        const smooth = u * u * (3 - 2 * u)
+        a = Math.round(255 * (1 - smooth))
       }
       d[(y * size + x) * 4 + 3] = a
     }

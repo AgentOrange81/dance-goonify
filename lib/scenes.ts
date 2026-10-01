@@ -20,18 +20,15 @@ const CLUB_ROOM = '/templates/scenes/club-room-empty.webp'
 // Keyframes measured from the NEW H3-regenerated plates (batch2).
 //
 // Front v2 (best loop of 3 variants, wrap diff = 8.46):
-//   - Cinematic front close-up, head and shoulders framing
-//   - Dancer's body is on the right side of the frame
-//   - Face oval: cx=950, cy=185, rx=170, ry=200 (almost circular, near full head)
-//   - Small head bob through the cycle (cx varies 920-960, cy varies 165-200)
+//   - Cinematic front close-up; dancer's head extends beyond the top and right edges
+//   - Visible face oval: center ~ (1000, 160) in native 1344x768
+//   - Scaled to canvas (1280x720): cx ~ 953, cy ~ 150, rx ~ 238 (huge — face fills most of frame), ry ~ 150
+//   - The oval is large and CLOSE; user-drawn face needs to match this scale
 //
 // Side v3 (best loop of 3 variants, wrap diff = 2.29 — perfect loop):
 //   - Full body 3/4 angle, dancer positioned left of frame
-//   - Face oval: cx=460, cy=170, rx=60, ry=85 (tall narrow oval)
-//   - Minimal head motion through cycle (oval stays roughly in place)
-//
-// IMPORTANT: t=0 and t=1.0 keyframes MUST match exactly for loop closure.
-// We set them to the same values explicitly.
+//   - Face oval: native ~ (560, 270) in 1344x768; ~ (560, 240) in 1280x720
+//   - Smaller oval due to wider framing: rx ~ 70, ry ~ 95
 //
 // Source: H3 generations batch2 (front_v2, side_v3). Cost: $2.88 of $15 cap.
 // Measurements: native 1344x768 video frames scaled to 1280x720 canvas coords.
@@ -43,13 +40,23 @@ export const SCENES: Scene[] = [
     background: CLUB_ROOM,
     dancer: '/templates/scenes/dancer-front-grind.webm',
     track: [
-      { t: 0.000, cx: 950, cy: 185, rx: 170, ry: 200, rotation: 0 },
-      { t: 0.166, cx: 945, cy: 180, rx: 170, ry: 200, rotation: 0 },
-      { t: 0.333, cx: 935, cy: 195, rx: 170, ry: 200, rotation: 0 },
-      { t: 0.500, cx: 925, cy: 200, rx: 170, ry: 200, rotation: 0 },
-      { t: 0.666, cx: 935, cy: 195, rx: 170, ry: 200, rotation: 0 },
-      { t: 0.833, cx: 945, cy: 185, rx: 170, ry: 200, rotation: 0 },
-      { t: 1.000, cx: 950, cy: 185, rx: 170, ry: 200, rotation: 0 },
+      // The face oval in the source MP4 (1344×768) spans approximately:
+      //   left edge: x=550, right edge: x=1300+ (extends past frame)
+      //   top edge: y=10 (almost off top), bottom edge: y=440 (chin)
+      // Center: native ~(925, 225) — but visible region center is shifted left
+      // since right portion is off-frame. Effective center ≈ (1110, 230) accounting
+      // for the truncation, but rendered canvas center stays around x=880-900
+      // because of how drawImage scales the 1344→1280.
+      // The oval is huge: rx≈280, ry≈200 (visible) — extending past right edge.
+      // rx_canvas ≈ 280 * (1280/1344) = 267
+      // ry_canvas ≈ 200 * (720/768) = 187
+      { t: 0.000, cx: 880, cy: 210, rx: 270, ry: 187, rotation: 0 },
+      { t: 0.166, cx: 875, cy: 205, rx: 270, ry: 187, rotation: 0 },
+      { t: 0.333, cx: 868, cy: 218, rx: 270, ry: 187, rotation: 0 },
+      { t: 0.500, cx: 862, cy: 225, rx: 270, ry: 187, rotation: 0 },
+      { t: 0.666, cx: 868, cy: 218, rx: 270, ry: 187, rotation: 0 },
+      { t: 0.833, cx: 875, cy: 205, rx: 270, ry: 187, rotation: 0 },
+      { t: 1.000, cx: 880, cy: 210, rx: 270, ry: 187, rotation: 0 },
     ],
   },
   {
@@ -58,13 +65,13 @@ export const SCENES: Scene[] = [
     background: CLUB_ROOM,
     dancer: '/templates/scenes/dancer-side-grind.webm',
     track: [
-      { t: 0.000, cx: 460, cy: 170, rx: 60, ry: 85, rotation: -10 },
-      { t: 0.166, cx: 458, cy: 165, rx: 60, ry: 85, rotation: -10 },
-      { t: 0.333, cx: 462, cy: 175, rx: 60, ry: 85, rotation: -10 },
-      { t: 0.500, cx: 460, cy: 170, rx: 60, ry: 85, rotation: -10 },
-      { t: 0.666, cx: 458, cy: 168, rx: 60, ry: 85, rotation: -10 },
-      { t: 0.833, cx: 460, cy: 172, rx: 60, ry: 85, rotation: -10 },
-      { t: 1.000, cx: 460, cy: 170, rx: 60, ry: 85, rotation: -10 },
+      { t: 0.000, cx: 560, cy: 240, rx: 70, ry: 95, rotation: -10 },
+      { t: 0.166, cx: 558, cy: 235, rx: 70, ry: 95, rotation: -10 },
+      { t: 0.333, cx: 562, cy: 245, rx: 70, ry: 95, rotation: -10 },
+      { t: 0.500, cx: 560, cy: 240, rx: 70, ry: 95, rotation: -10 },
+      { t: 0.666, cx: 558, cy: 238, rx: 70, ry: 95, rotation: -10 },
+      { t: 0.833, cx: 560, cy: 242, rx: 70, ry: 95, rotation: -10 },
+      { t: 1.000, cx: 560, cy: 240, rx: 70, ry: 95, rotation: -10 },
     ],
   },
 ]
