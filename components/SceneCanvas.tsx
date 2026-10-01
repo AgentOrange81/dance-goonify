@@ -84,7 +84,7 @@ export function SceneCanvas({
       }
       ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
       if (bg) ctx.drawImage(bg, 0, 0, CANVAS_W, CANVAS_H)
-      if (fp && scene && video && video.readyState >= 2) {
+      if (scene && video && video.readyState >= 2) {
         // Compute the face-hole position for the current video frame, so the patch tracks
         // the dancer's head across the loop.
         const dur = video.duration > 0 ? video.duration : 1
@@ -120,7 +120,7 @@ export function SceneCanvas({
       )}
       {!facePatch && !error && (
         <div className="absolute bottom-3 left-3 bg-ink-900/70 rounded px-3 py-1.5 pointer-events-none">
-          <p className="text-gray-400 text-xs lowercase">pick a face to begin</p>
+          <p className="text-gray-400 text-xs lowercase">drop a photo to put your face here</p>
         </div>
       )}
       {facePatch && !error && (
