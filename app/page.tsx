@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { DropZone } from '@/components/DropZone'
+import { FacePicker } from '@/components/FacePicker'
 import { ScenePicker } from '@/components/ScenePicker'
 import { SceneCanvas } from '@/components/SceneCanvas'
 import { RecordButton } from '@/components/RecordButton'
@@ -13,7 +13,6 @@ export default function HomePage() {
   const [facePatch, setFacePatch] = useState<FacePatch | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
-  // After mount, the SceneCanvas's <canvas> is in the DOM — point RecordButton at it.
   useEffect(() => {
     canvasRef.current = document.querySelector('canvas')
   }, [sceneId, facePatch])
@@ -34,13 +33,13 @@ export default function HomePage() {
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left column: dropzone + scene picker + record */}
+        {/* Left column: face picker + scene picker + record */}
         <div className="lg:col-span-1 space-y-4">
           <section>
             <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-2">
-              1. upload
+              1. pick your face
             </h2>
-            <DropZone onFaceReady={handleFaceReady} />
+            <FacePicker onFaceReady={handleFaceReady} />
           </section>
 
           <section>

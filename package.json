@@ -7,10 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "deploy": "wrangler pages deploy .next --project-name dance-goonify"
+    "deploy": "wrangler pages deploy out --project-name dance-goonify"
   },
   "dependencies": {
-    "face-api.js": "^0.22.2",
     "gif.js": "^0.2.0",
     "next": "^16.0.0",
     "react": "^19.0.0",

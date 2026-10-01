@@ -1,69 +1,71 @@
-import type { FaceLandmarks } from './detector'
+// User-drawn oval face picker. The user drags/resizes an oval on their photo,
+// we extract whatever is inside that oval and pass it to drawScene as the face patch.
 
 export type FacePatch = {
-  canvas: HTMLCanvasElement   // square, sized for tight face crop (eyes-to-chin + a bit above brows)
-  cropRect: { x: number; y: number; size: number }  // source-image coords that were cropped
-  landmarksInPatch: {
-    leftEye: { x: number; y: number }
-    rightEye: { x: number; y: number }
-    nose: { x: number; y: number }
-    mouthLeft: { x: number; y: number }
-    mouthRight: { x: number; y: number }
+  canvas: HTMLCanvasElement   // square, sized to fit the user's oval
+  oval: {
+    cx: number; cy: number; rx: number; ry: number; rotation: number  // patch-local coords
   }
+  sourceCropRect: { x: number; y: number; size: number }  // source-image coords
 }
 
-// Crops a tight face patch from the source image, aligned to the eye-line.
-// - The eye midpoint is placed at 40% of the patch height (chin ~25% below center, forehead ~60% above center)
-// - The patch size is set so the eye-to-chin distance fills ~45% of the patch
-// - Output is square, so the patch includes a bit of forehead for natural blending
-//
-// Returns a FacePatch with landmarks in PATCH coordinates so drawScene can position features correctly.
-export function cropFace(source: HTMLImageElement, landmarks: FaceLandmarks): FacePatch {
-  const { leftEye, rightEye, nose, mouthLeft, mouthRight } = landmarks.points
+// Extracts the pixels inside the user-drawn oval from the source image.
+// The oval is in SOURCE IMAGE pixel coordinates. We crop a square region around the oval
+// (size = max(rx, ry) * 2, padded a bit so the full oval fits), then render the source
+// pixels into the patch with the oval masked to a clean ellipse — outside the oval is transparent.
+// The output canvas is square; oval coords inside it are patch-local.
+export function cropOval(
+  source: HTMLImageElement,
+  newOll: { cx: number; cy: number; rx: number; ry: number },
+): FacePatch {
+  const W = source.naturalWidth
+  const H = source.naturalHeight
 
-  // Eye-line midpoint (in source image coords)
-  const eyeMidX = (leftEye.x + rightEye.x) / 2
-  const eyeMidY = (leftEye.y + rightEye.y) / 2
+  // Square patch, sized to the larger oval dim with a 10% pad so the alpha edge fades nicely.
+  const size = Math.round(Math.max(newOll.rx, newOll.ry) * 2 * 1.1)
+  const cropX = Math.round(newOll.cx - size / 2)
+  const cropY = Math.round(newOll.cy - size / 2)
 
-  // Estimate "chin" as the midpoint between mouth corners. We don't have a chin point, but
-  // mouth-to-chin is roughly the same as eye-to-mouth.
-  const mouthMidX = (mouthLeft.x + mouthRight.x) / 2
-  const mouthMidY = (mouthLeft.y + mouthRight.y) / 2
-
-  // Eye-to-mouth distance = roughly 60% of face height. So face height ≈ eyeToMouth / 0.6.
-  const eyeToMouth = Math.hypot(mouthMidX - eyeMidX, mouthMidY - eyeMidY)
-  const faceHeight = eyeToMouth / 0.6
-
-  // Patch size: scale faceHeight so it fills ~55% of the patch height, leaving room
-  // for forehead + a bit of chin/neck for natural blending.
-  const patchScale = 1.4
-  const size = Math.round(faceHeight * patchScale)
-
-  // Position the patch so the eye midpoint is at 40% from the top
-  // (so chin at ~85% from top, forehead ~30% above the eye-line).
-  const cropX = Math.round(eyeMidX - size * 0.5)
-  const cropY = Math.round(eyeMidY - size * 0.4)
-
-  // Offscreen canvas
   const canvas = document.createElement('canvas')
   canvas.width = size
   canvas.height = size
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  if (!ctx) throw new Error('cropFace: cannot get 2d context')
+  if (!ctx) throw new Error('cropOval: cannot get 2d context')
 
+  // Draw the source region
   ctx.drawImage(source, cropX, cropY, size, size, 0, 0, size, size)
 
-  // Map the source landmarks into patch coordinates (subtract cropX/Y from source coords).
-  // drawScene will use these to position the eye-line / mouth / nose relative to the dancer's face.
+  // Mask everything outside the oval to transparent (in patch-local coords, the oval is
+  // centered with the same rx/ry as in source, since the patch is axis-aligned).
+  const cx = size / 2
+  const cy = size / 2
+  const rx = newOll.rx
+  const ry = newOll.ry
+  const featherPx = Math.max(2, size * 0.03)
+
+  const img = ctx.getImageData(0, 0, size, size)
+  const d = img.data
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = (x - cx) / rx
+      const dy = (y - cy) / ry
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      let a: number
+      if (dist <= 1) {
+        a = 255
+      } else if (dist >= 1 + featherPx / Math.min(rx, ry)) {
+        a = 0
+      } else {
+        a = Math.round(255 * (1 - (dist - 1) * Math.min(rx, ry) / featherPx))
+      }
+      d[(y * size + x) * 4 + 3] = a
+    }
+  }
+  ctx.putImageData(img, 0, 0)
+
   return {
     canvas,
-    cropRect: { x: cropX, y: cropY, size },
-    landmarksInPatch: {
-      leftEye: { x: leftEye.x - cropX, y: leftEye.y - cropY },
-      rightEye: { x: rightEye.x - cropX, y: rightEye.y - cropY },
-      nose: { x: nose.x - cropX, y: nose.y - cropY },
-      mouthLeft: { x: mouthLeft.x - cropX, y: mouthLeft.y - cropY },
-      mouthRight: { x: mouthRight.x - cropX, y: mouthRight.y - cropY },
-    },
+    oval: { cx, cy, rx, ry, rotation: 0 },
+    sourceCropRect: { x: cropX, y: cropY, size },
   }
 }
