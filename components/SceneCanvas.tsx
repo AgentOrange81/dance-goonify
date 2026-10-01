@@ -54,16 +54,25 @@ export function SceneCanvas({
         rafRef.current = requestAnimationFrame(loop)
         return
       }
-      ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
-      if (scene && video && video.readyState >= 2) {
+      // Don't clearRect before drawing — if the video is briefly not-ready at the
+      // loop wrap (currentTime 5.99 -> 0.00, new frame not yet decoded), drawImage
+      // may paint nothing, and clearRect would flash black. Instead, drawImage
+      // overwrites the previous frame; on transient failure the old frame holds.
+      if (scene && video) {
         const dur = video.duration > 0 ? video.duration : 1
         const t = (video.currentTime % dur) / dur
         const fh = faceHoleAt(scene, t)
-        drawScene(ctx, scene, fh, {
-          dancer: video,
-          facePatch: fp,
-          cropTightness: cropTightnessRef.current,
-        } as DrawAssets)
+        try {
+          drawScene(ctx, scene, fh, {
+            dancer: video,
+            facePatch: fp,
+            cropTightness: cropTightnessRef.current,
+          } as DrawAssets)
+        } catch (err) {
+          // drawScene can throw if canvas is tainted or video state is bad.
+          // Skip this tick; next RAF will retry. Never crash the loop.
+          console.warn('[SceneCanvas] drawScene failed, skipping frame:', err)
+        }
       }
       rafRef.current = requestAnimationFrame(loop)
     }
