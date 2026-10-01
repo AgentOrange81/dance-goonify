@@ -25,29 +25,43 @@ export type Scene = {
   hairOverlay?: string      // /templates/scenes/<hair>.webp, drawn after face
 }
 
+// All scenes share the same empty club room plate — H3-generated (2026-10-01)
+// Dance plate positions are rough estimates from frame inspection. Use calibrate sliders to refine.
+const CLUB_ROOM = '/templates/scenes/club-room-empty.webp'
+
 export const SCENES: Scene[] = [
   {
     id: 'club-front-grind',
-    title: 'Front grind',
-    background: '/templates/scenes/club-room-front.webp',
+    title: 'front grind',
+    background: CLUB_ROOM,
     dancer: '/templates/scenes/dancer-front-grind.webp',
-    dancerLayout: { x: 340, y: 80, w: 600, h: 720 },
-    faceHole: { cx: 0.5, cy: 0.12, rx: 0.13, ry: 0.16, rotation: -5 },
+    dancerLayout: { x: 240, y: 0, w: 800, h: 720 },  // dancer fills width
+    faceHole: { cx: 0.5, cy: 0.28, rx: 0.11, ry: 0.17, rotation: -8 },
     grade: { tintHex: '#1a4a55', tintAmount: 0.3, contrast: 1.05, vignette: 0.4 },
     motion: { swayX: 18, swayHz: 0.5, bounceY: 12, bounceHz: 1.0, roll: 1.5, lean: 6, scalePulse: 0.015 },
   },
   {
     id: 'club-side-grind',
-    title: 'Side angle',
-    background: '/templates/scenes/club-room-side.webp',
+    title: 'side angle',
+    background: CLUB_ROOM,
     dancer: '/templates/scenes/dancer-side-grind.webp',
-    dancerLayout: { x: 380, y: 60, w: 540, h: 720 },
-    faceHole: { cx: 0.4, cy: 0.13, rx: 0.11, ry: 0.14, rotation: -28 },
+    dancerLayout: { x: 220, y: 0, w: 820, h: 720 },
+    faceHole: { cx: 0.51, cy: 0.25, rx: 0.09, ry: 0.14, rotation: -30 },
     grade: { tintHex: '#1a3a48', tintAmount: 0.35, contrast: 1.08, vignette: 0.45 },
     motion: { swayX: 22, swayHz: 0.45, bounceY: 10, bounceHz: 0.9, roll: 1.2, lean: 8, scalePulse: 0.012 },
+  },
+  {
+    id: 'club-back-arch',
+    title: 'back arch',
+    background: CLUB_ROOM,
+    dancer: '/templates/scenes/dancer-back-arch.webp',
+    dancerLayout: { x: 240, y: 0, w: 800, h: 720 },
+    faceHole: { cx: 0.48, cy: 0.24, rx: 0.10, ry: 0.15, rotation: -25 },
+    grade: { tintHex: '#1a3a48', tintAmount: 0.3, contrast: 1.05, vignette: 0.5 },
+    motion: { swayX: 16, swayHz: 0.55, bounceY: 14, bounceHz: 1.1, roll: 1.0, lean: 5, scalePulse: 0.018 },
   },
 ]
 
 export function getScene(id: string): Scene | undefined {
-  return SCENES.find(s => s.id === id)
+  return SCENES.find((s) => s.id === id)
 }

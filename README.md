@@ -29,8 +29,9 @@ pnpm deploy  # wrangler pages deploy
 
 ```
 app/page.tsx                    # landing + 18+ gate + dropzone
-app/lapdance/page.tsx           # full editor
-app/api/lapdance/route.ts       # 501 stub {preview:true} | worker proxy if LAPDANCE_WORKER_URL set
+app/lapdance/page.tsx           # redirect to /
+public/api/health.json          # static smoke endpoint (200 OK)
+public/api/lapdance.json        # static 501 stub for Path B forward-compat
 components/
   AgeGate.tsx                   # click-through 18+ modal
   DropZone.tsx                  # file → face crop
@@ -50,6 +51,10 @@ public/templates/
   scenes/*.webp                 # pre-rendered plates (H3-generated, ComfyUI-cleaned)
   models/                       # face-api.js weights
 ```
+
+Path A is fully browser-side. The whole product runs in the user's browser — no server
+computation. The `/api/lapdance` endpoint is a static JSON stub documenting what the
+future Path B (GPU worker) would do, when/if we ever stand one up.
 
 ## Adding a new scene
 
