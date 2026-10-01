@@ -1,25 +1,50 @@
 import type { FaceLandmarks } from './detector'
 
 export type FacePatch = {
-  canvas: HTMLCanvasElement   // square, size = expanded bbox dim
-  // Pre-computed alpha mask (one value per pixel, 0-255). Cached here so drawScene doesn't recompute.
-  alphaMask: ImageData
-  // Source crop rect (for diagnostics)
-  cropRect: { x: number; y: number; size: number }
+  canvas: HTMLCanvasElement   // square, sized for tight face crop (eyes-to-chin + a bit above brows)
+  cropRect: { x: number; y: number; size: number }  // source-image coords that were cropped
+  landmarksInPatch: {
+    leftEye: { x: number; y: number }
+    rightEye: { x: number; y: number }
+    nose: { x: number; y: number }
+    mouthLeft: { x: number; y: number }
+    mouthRight: { x: number; y: number }
+  }
 }
 
+// Crops a tight face patch from the source image, aligned to the eye-line.
+// - The eye midpoint is placed at 40% of the patch height (chin ~25% below center, forehead ~60% above center)
+// - The patch size is set so the eye-to-chin distance fills ~45% of the patch
+// - Output is square, so the patch includes a bit of forehead for natural blending
+//
+// Returns a FacePatch with landmarks in PATCH coordinates so drawScene can position features correctly.
 export function cropFace(source: HTMLImageElement, landmarks: FaceLandmarks): FacePatch {
-  // Expand bbox 30%
-  const pad = 0.3
-  const paddedW = landmarks.bbox.width * (1 + pad * 2)
-  const paddedH = landmarks.bbox.height * (1 + pad * 2)
-  const size = Math.max(paddedW, paddedH)  // square
-  const cx = landmarks.bbox.x + landmarks.bbox.width / 2
-  const cy = landmarks.bbox.y + landmarks.bbox.height / 2
-  const cropX = cx - size / 2
-  const cropY = cy - size / 2
+  const { leftEye, rightEye, nose, mouthLeft, mouthRight } = landmarks.points
 
-  // Offscreen canvas for the crop
+  // Eye-line midpoint (in source image coords)
+  const eyeMidX = (leftEye.x + rightEye.x) / 2
+  const eyeMidY = (leftEye.y + rightEye.y) / 2
+
+  // Estimate "chin" as the midpoint between mouth corners. We don't have a chin point, but
+  // mouth-to-chin is roughly the same as eye-to-mouth.
+  const mouthMidX = (mouthLeft.x + mouthRight.x) / 2
+  const mouthMidY = (mouthLeft.y + mouthRight.y) / 2
+
+  // Eye-to-mouth distance = roughly 60% of face height. So face height ≈ eyeToMouth / 0.6.
+  const eyeToMouth = Math.hypot(mouthMidX - eyeMidX, mouthMidY - eyeMidY)
+  const faceHeight = eyeToMouth / 0.6
+
+  // Patch size: scale faceHeight so it fills ~55% of the patch height, leaving room
+  // for forehead + a bit of chin/neck for natural blending.
+  const patchScale = 1.4
+  const size = Math.round(faceHeight * patchScale)
+
+  // Position the patch so the eye midpoint is at 40% from the top
+  // (so chin at ~85% from top, forehead ~30% above the eye-line).
+  const cropX = Math.round(eyeMidX - size * 0.5)
+  const cropY = Math.round(eyeMidY - size * 0.4)
+
+  // Offscreen canvas
   const canvas = document.createElement('canvas')
   canvas.width = size
   canvas.height = size
@@ -28,31 +53,17 @@ export function cropFace(source: HTMLImageElement, landmarks: FaceLandmarks): Fa
 
   ctx.drawImage(source, cropX, cropY, size, size, 0, 0, size, size)
 
-  // Build soft elliptical alpha mask — center fully opaque, edges feathered
-  const mask = ctx.createImageData(size, size)
-  const cx2 = size / 2
-  const cy2 = size / 2
-  const rx = size * 0.46   // slightly inside the canvas for feather
-  const ry = size * 0.50
-  const featherPx = 14     // soft edge width
-
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const dx = (x - cx2) / rx
-      const dy = (y - cy2) / ry
-      const d = Math.sqrt(dx * dx + dy * dy)
-      let a: number
-      if (d <= 1) a = 255
-      else if (d >= 1 + featherPx / Math.min(rx, ry)) a = 0
-      else a = Math.round(255 * (1 - (d - 1) * Math.min(rx, ry) / featherPx))
-      const idx = (y * size + x) * 4
-      mask.data[idx + 3] = a
-    }
-  }
-
+  // Map the source landmarks into patch coordinates (subtract cropX/Y from source coords).
+  // drawScene will use these to position the eye-line / mouth / nose relative to the dancer's face.
   return {
     canvas,
-    alphaMask: mask,
     cropRect: { x: cropX, y: cropY, size },
+    landmarksInPatch: {
+      leftEye: { x: leftEye.x - cropX, y: leftEye.y - cropY },
+      rightEye: { x: rightEye.x - cropX, y: rightEye.y - cropY },
+      nose: { x: nose.x - cropX, y: nose.y - cropY },
+      mouthLeft: { x: mouthLeft.x - cropX, y: mouthLeft.y - cropY },
+      mouthRight: { x: mouthRight.x - cropX, y: mouthRight.y - cropY },
+    },
   }
 }
