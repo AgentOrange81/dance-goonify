@@ -4,26 +4,25 @@ import { useEffect, useState } from 'react'
 
 const STORAGE_KEY = 'dance-age-confirmed'
 
+// Read once during module init (server-safe default to "modal"). After mount, the
+// client re-reads and may transition from "modal" to "ok" without showing "loading…".
+function readInitial(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return localStorage.getItem(STORAGE_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
 export function AgeGate({ children }: { children: React.ReactNode }) {
-  const [confirmed, setConfirmed] = useState<boolean | null>(null)
+  // Start assuming the user has NOT confirmed. After mount, check localStorage;
+  // if they've already confirmed in a previous session, skip the modal.
+  const [confirmed, setConfirmed] = useState<boolean>(false)
 
   useEffect(() => {
-    try {
-      const v = localStorage.getItem(STORAGE_KEY)
-      setConfirmed(v === 'true')
-    } catch {
-      setConfirmed(false)
-    }
+    if (readInitial()) setConfirmed(true)
   }, [])
-
-  // Don't flash the gate while we read localStorage
-  if (confirmed === null) {
-    return (
-      <div className="min-h-screen bg-ink-900 flex items-center justify-center">
-        <div className="text-teal-glow text-sm tracking-widest lowercase">loading…</div>
-      </div>
-    )
-  }
 
   if (confirmed) return <>{children}</>
 
