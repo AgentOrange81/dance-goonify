@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { getScene } from '@/lib/scenes'
+import { getScene, faceHoleAt } from '@/lib/scenes'
 import { drawScene, type DrawAssets } from '@/lib/canvas/drawScene'
 import type { FacePatch } from '@/lib/face/crop'
 
@@ -85,7 +85,12 @@ export function SceneCanvas({
       ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
       if (bg) ctx.drawImage(bg, 0, 0, CANVAS_W, CANVAS_H)
       if (fp && scene && video && video.readyState >= 2) {
-        drawScene(ctx, scene, {
+        // Compute the face-hole position for the current video frame, so the patch tracks
+        // the dancer's head across the loop.
+        const dur = video.duration > 0 ? video.duration : 1
+        const t = (video.currentTime % dur) / dur
+        const fh = faceHoleAt(scene, t)
+        drawScene(ctx, scene, fh, {
           background: bg!,
           dancer: video,
           facePatch: fp,

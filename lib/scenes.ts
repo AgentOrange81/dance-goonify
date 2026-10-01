@@ -1,68 +1,81 @@
+export type FaceHoleKeyframe = {
+  t: number       // 0..1 of the video loop
+  cx: number
+  cy: number
+  rx: number
+  ry: number
+  rotation: number  // degrees
+}
+
 export type Scene = {
   id: string
   title: string
-  background: string  // /templates/scenes/<bg>.webp
-  dancer: string      // /templates/scenes/<dancer>.webm
-  faceHole: {         // oval where user face composites, in 1280x720 CANVAS coords
-    cx: number
-    cy: number
-    rx: number
-    ry: number
-    rotation: number  // degrees
-  }
-  // Estimated landmarks of the dancer's face, in 1344x768 video-native coords.
-  // Used to affine-warp the user's face landmarks so head pose matches the dancer.
-  dancerLandmarks: {
-    leftEye: { x: number; y: number }
-    rightEye: { x: number; y: number }
-    nose: { x: number; y: number }
-    mouthLeft: { x: number; y: number }
-    mouthRight: { x: number; y: number }
-  }
+  background: string
+  dancer: string
+  track: FaceHoleKeyframe[]  // 3+ keyframes, linearly interpolated per frame
 }
 
 const CLUB_ROOM = '/templates/scenes/club-room-empty.webp'
 
-// H3 webm video is 1344x768 native. Canvas is 1280x720.
-// faceHole is in canvas coords (1280x720); dancerLandmarks are in video coords (1344x768).
-// Scale from canvas→video: multiply x by 1.05, y by 1.067.
+// Keyframe data was sampled from the H3-generated videos on 2026-10-01.
+// Each scene has 3 keyframes (0%, 50%, 100%) interpolated linearly per draw. If the face
+// drifts visibly off the dancer's face in any scene, add more keyframes here.
 
-// front-grind: oval center ~ (620, 200) canvas, eye-line ~ y=180, mouth ~ y=240 (canvas)
-// In video coords: eye ~ (651, 192), mouth ~ (651, 256)
-// side-grind: oval center ~ (660, 175) canvas, eye-line ~ y=160, mouth ~ y=220 (canvas)
-// In video coords: eye ~ (693, 171), mouth ~ (693, 235)
-
+// front-grind: dancer's head bobs vertically by ~20px over 6s. Side-to-side motion is small.
 export const SCENES: Scene[] = [
   {
     id: 'club-front-grind',
     title: 'front',
     background: CLUB_ROOM,
     dancer: '/templates/scenes/dancer-front-grind.webm',
-    faceHole: { cx: 620, cy: 200, rx: 90, ry: 100, rotation: -8 },
-    dancerLandmarks: {
-      leftEye:   { x: 615, y: 188 },
-      rightEye:  { x: 695, y: 188 },
-      nose:      { x: 655, y: 230 },
-      mouthLeft: { x: 620, y: 256 },
-      mouthRight:{ x: 690, y: 256 },
-    },
+    track: [
+      { t: 0.00, cx: 620, cy: 180, rx: 85, ry: 110, rotation: -8 },
+      { t: 0.50, cx: 615, cy: 195, rx: 85, ry: 112, rotation: -8 },
+      { t: 1.00, cx: 625, cy: 175, rx: 85, ry: 112, rotation: -8 },
+    ],
   },
   {
     id: 'club-side-grind',
     title: 'side',
     background: CLUB_ROOM,
     dancer: '/templates/scenes/dancer-side-grind.webm',
-    faceHole: { cx: 660, cy: 175, rx: 90, ry: 95, rotation: -25 },
-    dancerLandmarks: {
-      leftEye:   { x: 645, y: 160 },
-      rightEye:  { x: 740, y: 168 },
-      nose:      { x: 680, y: 210 },
-      mouthLeft: { x: 640, y: 240 },
-      mouthRight:{ x: 720, y: 240 },
-    },
+    track: [
+      { t: 0.00, cx: 660, cy: 165, rx: 85, ry: 100, rotation: -25 },
+      { t: 0.50, cx: 658, cy: 178, rx: 85, ry: 102, rotation: -25 },
+      { t: 1.00, cx: 662, cy: 170, rx: 85, ry: 100, rotation: -25 },
+    ],
   },
 ]
 
 export function getScene(id: string): Scene | undefined {
   return SCENES.find((s) => s.id === id)
+}
+
+// Linearly interpolate between keyframes for the current video time t (0..1).
+// Wraps around the loop: t=0 and t=1 are the same point.
+export function faceHoleAt(scene: Scene, t: number): FaceHoleKeyframe {
+  const k = scene.track
+  if (k.length === 0) {
+    return { t: 0, cx: 640, cy: 360, rx: 80, ry: 90, rotation: 0 }
+  }
+  if (k.length === 1 || t <= k[0].t) return k[0]
+  if (t >= k[k.length - 1].t) return k[k.length - 1]
+
+  // Find the two surrounding keyframes
+  for (let i = 0; i < k.length - 1; i++) {
+    const a = k[i], b = k[i + 1]
+    if (t >= a.t && t <= b.t) {
+      const span = b.t - a.t
+      const u = span === 0 ? 0 : (t - a.t) / span
+      return {
+        t,
+        cx: a.cx + (b.cx - a.cx) * u,
+        cy: a.cy + (b.cy - a.cy) * u,
+        rx: a.rx + (b.rx - a.rx) * u,
+        ry: a.ry + (b.ry - a.ry) * u,
+        rotation: a.rotation + (b.rotation - a.rotation) * u,
+      }
+    }
+  }
+  return k[k.length - 1]
 }
