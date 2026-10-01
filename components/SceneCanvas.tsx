@@ -17,37 +17,16 @@ export function SceneCanvas({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
-  const [bgImg, setBgImg] = useState<HTMLImageElement | null>(null)
   const [cropTightness, setCropTightness] = useState<number>(1.0)
   const [error, setError] = useState<string | null>(null)
   const rafRef = useRef<number | null>(null)
   const facePatchRef = useRef<FacePatch | null>(null)
   const sceneIdRef = useRef(sceneId)
   const cropTightnessRef = useRef(cropTightness)
-  const bgImgRef = useRef<HTMLImageElement | null>(null)
 
   useEffect(() => { facePatchRef.current = facePatch }, [facePatch])
   useEffect(() => { sceneIdRef.current = sceneId }, [sceneId])
   useEffect(() => { cropTightnessRef.current = cropTightness }, [cropTightness])
-  useEffect(() => { bgImgRef.current = bgImg }, [bgImg])
-
-  // Load background whenever the scene changes
-  useEffect(() => {
-    const scene = getScene(sceneId)
-    if (!scene) {
-      setError(`unknown scene: ${sceneId}`)
-      return
-    }
-    setError(null)
-    setBgImg(null)
-    let cancelled = false
-
-    const bgImgEl = new Image()
-    bgImgEl.crossOrigin = 'anonymous'
-    bgImgEl.onload = () => { if (!cancelled) setBgImg(bgImgEl) }
-    bgImgEl.onerror = () => { if (!cancelled) setError(`failed to load bg: ${scene.background}`) }
-    bgImgEl.src = scene.background
-  }, [sceneId])
 
   // Update the video's src when the scene changes. The <video> element is mounted in the JSX,
   // so the browser decodes and plays it normally. We just swap the src.
@@ -63,10 +42,9 @@ export function SceneCanvas({
     })
   }, [sceneId])
 
-  // RAF loop — draws bg + current video frame + face patch (if any) every frame
+  // RAF loop — draws the current video frame + face patch (if any) every frame
   useEffect(() => {
     const loop = () => {
-      const bg = bgImgRef.current
       const video = videoRef.current
       const fp = facePatchRef.current
       const scene = getScene(sceneIdRef.current)
@@ -77,15 +55,13 @@ export function SceneCanvas({
         return
       }
       ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
-      if (bg) ctx.drawImage(bg, 0, 0, CANVAS_W, CANVAS_H)
       if (scene && video && video.readyState >= 2) {
         const dur = video.duration > 0 ? video.duration : 1
         const t = (video.currentTime % dur) / dur
         const fh = faceHoleAt(scene, t)
         drawScene(ctx, scene, fh, {
-          background: bg!,
           dancer: video,
-          facePatch: fp,  // may be null — drawScene skips face draw in that case
+          facePatch: fp,
           cropTightness: cropTightnessRef.current,
         } as DrawAssets)
       }

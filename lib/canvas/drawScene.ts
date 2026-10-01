@@ -5,7 +5,6 @@ const CANVAS_W = 1280
 const CANVAS_H = 720
 
 export type DrawAssets = {
-  background: HTMLImageElement
   dancer: HTMLVideoElement
   facePatch: FacePatch | null
   cropTightness: number
@@ -23,7 +22,6 @@ export function drawScene(
   assets: DrawAssets,
 ): void {
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
-  ctx.drawImage(assets.background, 0, 0, CANVAS_W, CANVAS_H)
   ctx.drawImage(assets.dancer, 0, 0, CANVAS_W, CANVAS_H)
 
   if (!assets.facePatch) return
