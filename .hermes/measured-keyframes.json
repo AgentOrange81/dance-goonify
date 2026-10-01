@@ -1,0 +1,118 @@
+{
+  "front": [
+    {
+      "frame": "front_01",
+      "t": 0.0,
+      "scene": "front",
+      "cx": 694.7046703296703,
+      "cy": 191.47298534798534,
+      "area": 2184,
+      "rx_est": 45.5,
+      "ry_est": 63.0
+    },
+    {
+      "frame": "front_02",
+      "t": 0.166667,
+      "scene": "front",
+      "cx": 657.6048979591837,
+      "cy": 261.574693877551,
+      "area": 1225,
+      "rx_est": 36.0,
+      "ry_est": 30.0
+    },
+    {
+      "frame": "front_03",
+      "t": 0.333333,
+      "scene": "front",
+      "cx": 715.3387410772226,
+      "cy": 172.98118105126542,
+      "area": 1541,
+      "rx_est": 25.5,
+      "ry_est": 53.0
+    },
+    {
+      "frame": "front_04",
+      "t": 0.5,
+      "scene": "front",
+      "cx": 709.1466198419666,
+      "cy": 164.10886742756804,
+      "area": 1139,
+      "rx_est": 22.5,
+      "ry_est": 36.0
+    },
+    {
+      "frame": "front_05",
+      "t": 0.666667,
+      "scene": "front",
+      "cx": 708.1207133058986,
+      "cy": 170.92455418381346,
+      "area": 1458,
+      "rx_est": 25.5,
+      "ry_est": 56.5
+    },
+    {
+      "frame": "front_06",
+      "t": 0.833333,
+      "scene": "front",
+      "cx": 701.6359026369169,
+      "cy": 184.18052738336715,
+      "area": 986,
+      "rx_est": 20.5,
+      "ry_est": 40.0
+    },
+    {
+      "frame": "front_07",
+      "t": 1.0,
+      "scene": "front",
+      "cx": 704.4993548387097,
+      "cy": 154.3425806451613,
+      "area": 1550,
+      "rx_est": 25.5,
+      "ry_est": 59.0
+    }
+  ],
+  "side": [
+    {
+      "frame": "side_01",
+      "t": 0.0,
+      "scene": "side",
+      "skipped": true
+    },
+    {
+      "frame": "side_02",
+      "t": 0.166667,
+      "scene": "side",
+      "skipped": true
+    },
+    {
+      "frame": "side_03",
+      "t": 0.333333,
+      "scene": "side",
+      "skipped": true
+    },
+    {
+      "frame": "side_04",
+      "t": 0.5,
+      "scene": "side",
+      "skipped": true
+    },
+    {
+      "frame": "side_05",
+      "t": 0.666667,
+      "scene": "side",
+      "skipped": true
+    },
+    {
+      "frame": "side_06",
+      "t": 0.833333,
+      "scene": "side",
+      "skipped": true
+    },
+    {
+      "frame": "side_07",
+      "t": 1.0,
+      "scene": "side",
+      "skipped": true
+    }
+  ]
+}

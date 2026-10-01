@@ -1,10 +1,10 @@
 export type FaceHoleKeyframe = {
-  t: number       // 0..1 of the video loop
+  t: number
   cx: number
   cy: number
   rx: number
   ry: number
-  rotation: number  // degrees
+  rotation: number
 }
 
 export type Scene = {
@@ -12,20 +12,24 @@ export type Scene = {
   title: string
   background: string
   dancer: string
-  track: FaceHoleKeyframe[]  // 3+ keyframes, linearly interpolated per draw frame
+  track: FaceHoleKeyframe[]
 }
 
 const CLUB_ROOM = '/templates/scenes/club-room-empty.webp'
 
-// Keyframe data measured from the H3 videos on 2026-10-01 by overlaying a coord grid
-// and reading the dancer's blank oval face position on each sampled frame.
+// Keyframes derived from auto-detection on 7 frames per video (2026-10-01, see
+// .hermes/measured-keyframes.json). Auto-detection captured the per-frame head
+// position well; the only smoothing is to ignore outliers where the detector
+// latched onto a non-oval blob (the body skin or neck) instead of the oval.
 //
-// The oval moves only slightly (~30px sway, mostly vertical) because the H3 video is
-// a 6-second looped clip. We track with 4 keyframes per scene — enough to capture
-// the up/down motion.
+// For front-grind: 7 measurements, cx range 658-715 (mean ~700), cy range
+// 154-262 with one outlier at 262 (frame 02, detector latched onto neck).
+// Cleaned cy range 154-191 (mean ~173).
 //
-// Front-grind: oval rotated -8° (slight head tilt). rx≈65, ry≈55 (wider than tall).
-// Side-grind: oval rotated -25° (3/4 angle). rx≈40, ry≈60 (taller than wide).
+// For side-grind: auto-detection failed (0/7) because the 3/4 angle changes
+// skin hue. Falling back to visual grid measurement: oval center ~(600, 140)
+// for the front portion of the loop with minor vertical bob. Per-frame
+// tracking on this plate is deferred to v1.5 (template matching worker).
 
 export const SCENES: Scene[] = [
   {
@@ -34,10 +38,13 @@ export const SCENES: Scene[] = [
     background: CLUB_ROOM,
     dancer: '/templates/scenes/dancer-front-grind.webm',
     track: [
-      { t: 0.00, cx: 595, cy: 185, rx: 65, ry: 55, rotation: -8 },
-      { t: 0.33, cx: 605, cy: 185, rx: 65, ry: 55, rotation: -8 },
-      { t: 0.66, cx: 585, cy: 185, rx: 65, ry: 55, rotation: -8 },
-      { t: 1.00, cx: 615, cy: 175, rx: 65, ry: 55, rotation: -8 },
+      { t: 0.00, cx: 700, cy: 180, rx: 50, ry: 60, rotation: -8 },
+      { t: 0.17, cx: 660, cy: 185, rx: 50, ry: 60, rotation: -8 },
+      { t: 0.33, cx: 715, cy: 170, rx: 50, ry: 60, rotation: -8 },
+      { t: 0.50, cx: 710, cy: 165, rx: 50, ry: 60, rotation: -8 },
+      { t: 0.67, cx: 710, cy: 170, rx: 50, ry: 60, rotation: -8 },
+      { t: 0.83, cx: 700, cy: 185, rx: 50, ry: 60, rotation: -8 },
+      { t: 1.00, cx: 705, cy: 155, rx: 50, ry: 60, rotation: -8 },
     ],
   },
   {

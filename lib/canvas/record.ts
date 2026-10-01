@@ -6,10 +6,17 @@ export type RecordResult = {
 }
 
 const PREFERRED_MIME_CHAIN: { mime: string; ext: string }[] = [
+  // WebM with VP9 (best quality, ~30% smaller than VP8, broad support)
+  { mime: 'video/webm;codecs=vp9,opus', ext: 'webm' },
   { mime: 'video/webm;codecs=vp9', ext: 'webm' },
+  // WebM with VP8 (universal support, slightly larger)
   { mime: 'video/webm;codecs=vp8', ext: 'webm' },
-  { mime: 'video/webm', ext: 'webm' },
+  // H.264 in MP4 (Safari/iOS native — fallback for cross-platform sharing)
+  { mime: 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', ext: 'mp4' },
+  { mime: 'video/mp4;codecs=avc1.42E01E', ext: 'mp4' },
   { mime: 'video/mp4', ext: 'mp4' },
+  // Plain WebM (last resort)
+  { mime: 'video/webm', ext: 'webm' },
 ]
 
 export function pickRecorderMime(): { mime: string; ext: string } | null {
