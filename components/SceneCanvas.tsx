@@ -85,7 +85,7 @@ export function SceneCanvas({
         drawScene(ctx, scene, fh, {
           background: bg!,
           dancer: video,
-          facePatch: fp,
+          facePatch: fp,  // may be null — drawScene skips face draw in that case
           cropTightness: cropTightnessRef.current,
         } as DrawAssets)
       }

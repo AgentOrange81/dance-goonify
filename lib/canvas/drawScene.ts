@@ -7,13 +7,12 @@ const CANVAS_H = 720
 export type DrawAssets = {
   background: HTMLImageElement
   dancer: HTMLVideoElement
-  facePatch: FacePatch
-  cropTightness: number  // 0.5 → 1.5, scales the patch around faceHole center
+  facePatch: FacePatch | null  // null → no face composite; dancer plays alone
+  cropTightness: number  // 0.5 → 1.5
 }
 
-// Draws one frame: background → dancer (video frame) → face patch centered at `fh`,
-// scaled by tightness, clipped to the rotated oval. `fh` should be the interpolated
-// face-hole for the current video time so the patch tracks the dancer's head.
+// Draws one frame: background → dancer (video frame) → face patch (if any) clipped to fh.
+// When facePatch is null, only bg + dancer draw, leaving the dancer's blank oval face visible.
 export function drawScene(
   ctx: CanvasRenderingContext2D,
   scene: Scene,
@@ -24,11 +23,12 @@ export function drawScene(
   ctx.drawImage(assets.background, 0, 0, CANVAS_W, CANVAS_H)
   ctx.drawImage(assets.dancer, 0, 0, CANVAS_W, CANVAS_H)
 
+  if (!assets.facePatch) return
+
   const tightness = Math.max(0.3, Math.min(1.5, assets.cropTightness))
   const rot = (fh.rotation * Math.PI) / 180
 
   // Scale the patch so its oval region fits the current faceHole oval at tightness=1.
-  // Use the smaller dim so the patch doesn't overflow either axis of the hole.
   const ov = assets.facePatch.oval
   const sx = fh.rx / ov.rx
   const sy = fh.ry / ov.ry
@@ -39,11 +39,9 @@ export function drawScene(
   const drawH = patchSize * finalScale
 
   ctx.save()
-  // Clip to the rotated oval at the current keyframe position
   ctx.beginPath()
   ctx.ellipse(fh.cx, fh.cy, fh.rx, fh.ry, rot, 0, Math.PI * 2)
   ctx.clip()
-  // Translate to faceHole center, rotate to faceHole angle, then draw the patch centered.
   ctx.translate(fh.cx, fh.cy)
   ctx.rotate(rot)
   ctx.drawImage(assets.facePatch.canvas, -drawW / 2, -drawH / 2, drawW, drawH)
