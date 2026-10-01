@@ -17,19 +17,19 @@ export type Scene = {
 
 const CLUB_ROOM = '/templates/scenes/club-room-empty.webp'
 
-// Keyframes derived from auto-detection on 7 frames per video (2026-10-01, see
-// .hermes/measured-keyframes.json). Auto-detection captured the per-frame head
-// position well; the only smoothing is to ignore outliers where the detector
-// latched onto a non-oval blob (the body skin or neck) instead of the oval.
+// Keyframes measured from the trimmed + crossfaded webm loops (see
+// .hermes/measured-keyframes.json for raw data).
 //
-// For front-grind: 7 measurements, cx range 658-715 (mean ~700), cy range
-// 154-262 with one outlier at 262 (frame 02, detector latched onto neck).
-// Cleaned cy range 154-191 (mean ~173).
+// The trimmed loops are short (~1.6s for front, ~1.75s for side). Each loop
+// contains one full hip-grind cycle. Tracking the oval center frame-by-frame
+// on the trimmed videos (warm-pixel filter on x:400-800, y<300) gives:
+//   front: cx 722-745 (mean ~731), cy 180-210 (small head bob)
+//   side:  cx 615-631 (mean ~623), cy 153-190 (small head bob)
 //
-// For side-grind: auto-detection failed (0/7) because the 3/4 angle changes
-// skin hue. Falling back to visual grid measurement: oval center ~(600, 140)
-// for the front portion of the loop with minor vertical bob. Per-frame
-// tracking on this plate is deferred to v1.5 (template matching worker).
+// Loop wrap is invisible because the source video was trimmed to a natural
+// cycle boundary (frame 45 for front, frame 48 for side) with a 6-frame
+// xfade at the seam. The original measurement agent reported x=699 for front,
+// which was ~40px off — that was a bad sample. This set is correct.
 
 export const SCENES: Scene[] = [
   {
@@ -38,13 +38,13 @@ export const SCENES: Scene[] = [
     background: CLUB_ROOM,
     dancer: '/templates/scenes/dancer-front-grind.webm',
     track: [
-      { t: 0.00, cx: 700, cy: 180, rx: 50, ry: 60, rotation: -8 },
-      { t: 0.17, cx: 660, cy: 185, rx: 50, ry: 60, rotation: -8 },
-      { t: 0.33, cx: 715, cy: 170, rx: 50, ry: 60, rotation: -8 },
-      { t: 0.50, cx: 710, cy: 165, rx: 50, ry: 60, rotation: -8 },
-      { t: 0.67, cx: 710, cy: 170, rx: 50, ry: 60, rotation: -8 },
-      { t: 0.83, cx: 700, cy: 185, rx: 50, ry: 60, rotation: -8 },
-      { t: 1.00, cx: 705, cy: 155, rx: 50, ry: 60, rotation: -8 },
+      { t: 0.00, cx: 744, cy: 206, rx: 50, ry: 60, rotation: -8 },
+      { t: 0.16, cx: 743, cy: 203, rx: 50, ry: 60, rotation: -8 },
+      { t: 0.32, cx: 736, cy: 195, rx: 50, ry: 60, rotation: -8 },
+      { t: 0.50, cx: 728, cy: 182, rx: 50, ry: 60, rotation: -8 },
+      { t: 0.68, cx: 725, cy: 189, rx: 50, ry: 60, rotation: -8 },
+      { t: 0.84, cx: 722, cy: 205, rx: 50, ry: 60, rotation: -8 },
+      { t: 1.00, cx: 726, cy: 210, rx: 50, ry: 60, rotation: -8 },
     ],
   },
   {
@@ -53,10 +53,13 @@ export const SCENES: Scene[] = [
     background: CLUB_ROOM,
     dancer: '/templates/scenes/dancer-side-grind.webm',
     track: [
-      { t: 0.00, cx: 600, cy: 140, rx: 40, ry: 60, rotation: -25 },
-      { t: 0.33, cx: 600, cy: 140, rx: 40, ry: 60, rotation: -25 },
-      { t: 0.66, cx: 590, cy: 140, rx: 40, ry: 60, rotation: -25 },
-      { t: 1.00, cx: 600, cy: 140, rx: 40, ry: 60, rotation: -25 },
+      { t: 0.00, cx: 619, cy: 166, rx: 40, ry: 60, rotation: -25 },
+      { t: 0.17, cx: 618, cy: 153, rx: 40, ry: 60, rotation: -25 },
+      { t: 0.34, cx: 619, cy: 162, rx: 40, ry: 60, rotation: -25 },
+      { t: 0.50, cx: 630, cy: 188, rx: 40, ry: 60, rotation: -25 },
+      { t: 0.67, cx: 622, cy: 181, rx: 40, ry: 60, rotation: -25 },
+      { t: 0.84, cx: 627, cy: 171, rx: 40, ry: 60, rotation: -25 },
+      { t: 1.00, cx: 621, cy: 157, rx: 40, ry: 60, rotation: -25 },
     ],
   },
 ]
