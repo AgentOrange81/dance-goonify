@@ -1,20 +1,29 @@
 'use client'
 
 import { useState } from 'react'
-import { recordCanvas, downloadBlob, pickRecorderMime } from '@/lib/canvas/record'
+import { recordOneLoop, downloadBlob, pickRecorderMime } from '@/lib/canvas/record'
 
-export function RecordButton({ canvasRef }: { canvasRef: React.RefObject<HTMLCanvasElement | null> }) {
+type Props = {
+  canvasRef: React.RefObject<HTMLCanvasElement | null>
+  videoRef: React.RefObject<HTMLVideoElement | null>
+}
+
+export function RecordButton({ canvasRef, videoRef }: Props) {
   const [recording, setRecording] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const supported = pickRecorderMime() !== null
 
   const onClick = async () => {
     const canvas = canvasRef.current
-    if (!canvas || recording) return
+    const video = videoRef.current
+    if (!canvas || !video || recording) return
     setError(null)
     setRecording(true)
     try {
-      const result = await recordCanvas(canvas, 6000)
+      // Snap the video to t=0, then record exactly one full loop. This way
+      // every take starts at the same loop boundary so the clip is identical
+      // on every capture (no mid-loop glitchy frames).
+      const result = await recordOneLoop(canvas, video)
       downloadBlob(result, `dance-${Date.now()}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'record failed')
@@ -37,7 +46,7 @@ export function RecordButton({ canvasRef }: { canvasRef: React.RefObject<HTMLCan
               : 'bg-gold hover:bg-gold/80 text-ink-900'}
         `}
       >
-        {recording ? '◉ recording 6s…' : '⏺ record & download'}
+        {recording ? '◉ recording one loop…' : '⏺ record & download'}
       </button>
       {!supported && (
         <p className="text-xs text-gray-500 mt-2 lowercase text-center">

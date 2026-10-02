@@ -2,12 +2,19 @@
 
 import { forwardRef, useEffect, useRef, useState } from 'react'
 import { getScene, faceHoleAt, CANVAS_W, CANVAS_H } from '@/lib/scenes'
-import { drawScene, type DrawAssets } from '@/lib/canvas/drawScene'
+import {
+  drawVideoFrame,
+  drawPatch,
+  applyOneShotColorMatch,
+} from '@/lib/canvas/drawScene'
 import type { FacePatch } from '@/lib/face/crop'
 
 type Props = {
   sceneId: string
   facePatch: FacePatch | null
+  /** Optional ref the parent owns so RecordButton can poll `video.currentTime`
+   *  for loop-aligned recording. If omitted, SceneCanvas owns its own ref. */
+  externalVideoRef?: React.RefObject<HTMLVideoElement | null>
 }
 
 /**
@@ -16,10 +23,11 @@ type Props = {
  * RecordButton can grab the same canvas for captureStream().
  */
 export const SceneCanvas = forwardRef<HTMLCanvasElement, Props>(function SceneCanvas(
-  { sceneId, facePatch },
+  { sceneId, facePatch, externalVideoRef },
   ref,
 ) {
-  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const internalVideoRef = useRef<HTMLVideoElement | null>(null)
+  const videoRef = externalVideoRef ?? internalVideoRef
   const [cropTightness, setCropTightness] = useState<number>(1.0)
   const [error, setError] = useState<string | null>(null)
   const rafRef = useRef<number | null>(null)
@@ -27,6 +35,12 @@ export const SceneCanvas = forwardRef<HTMLCanvasElement, Props>(function SceneCa
   const facePatchRef = useRef<FacePatch | null>(null)
   const sceneIdRef = useRef(sceneId)
   const tightnessRef = useRef(cropTightness)
+  // Track which (scene, patch) pair the patch was last colour-matched for.
+  // A patch matched against the front scene looks wrong on the side scene;
+  // we re-match whenever either changes. We compare references directly —
+  // a new patch object means the user picked a new face.
+  const matchedSceneRef = useRef<string>('')
+  const matchedPatchRef = useRef<FacePatch | null>(null)
 
   useEffect(() => { facePatchRef.current = facePatch }, [facePatch])
   useEffect(() => { sceneIdRef.current = sceneId }, [sceneId])
@@ -43,9 +57,12 @@ export const SceneCanvas = forwardRef<HTMLCanvasElement, Props>(function SceneCa
     vid.play().catch((err) => {
       console.warn('[SceneCanvas] video play() rejected:', err)
     })
-  }, [sceneId])
+  }, [sceneId, videoRef])
 
-  // RAF loop — draws the current video frame + face patch every tick.
+  // RAF loop — composes the video frame, optionally applies the one-shot
+  // colour match, then draws the patch on top. The order matters: we paint
+  // the video first so the colour-match sample reads pure dancer skin, not
+  // the previous frame's composite.
   useEffect(() => {
     const loop = () => {
       const video = videoRef.current
@@ -62,16 +79,34 @@ export const SceneCanvas = forwardRef<HTMLCanvasElement, Props>(function SceneCa
         const dur = video.duration > 0 ? video.duration : 1
         const t = (video.currentTime % dur) / dur
         const fh = faceHoleAt(scene, t)
+        const fp = facePatchRef.current
+
         try {
-          drawScene(ctx, scene, fh, {
-            dancer: video,
-            facePatch: facePatchRef.current,
-            cropTightness: tightnessRef.current,
-          } as DrawAssets)
+          // 1. Paint the current video frame as the base layer.
+          drawVideoFrame(ctx, video)
+
+          // 2. One-shot Lab colour match: runs the first time we composite
+          //    this (scene, patch) pair, and any time either changes. Must
+          //    happen AFTER the video draw and BEFORE the patch so the
+          //    sample reads pure dancer skin. `applyOneShotColorMatch`
+          //    resets the working canvas from `patch.originalCanvas`, so a
+          //    scene switch never re-transforms an already-transformed
+          //    patch.
+          if (fp && (matchedPatchRef.current !== fp || matchedSceneRef.current !== scene.id)) {
+            applyOneShotColorMatch(ctx, fh, fp, 0.7)
+            matchedPatchRef.current = fp
+            matchedSceneRef.current = scene.id
+          }
+
+          // 3. Composite the patch on top with the decontamination ring.
+          if (fp) {
+            drawPatch(ctx, fh, fp, tightnessRef.current)
+          }
         } catch (err) {
-          // drawScene can throw if the canvas is tainted or video state is
-          // bad. Skip this tick; the next RAF retries. Never crash the loop.
-          console.warn('[SceneCanvas] drawScene failed, skipping frame:', err)
+          // drawVideoFrame / drawPatch can throw if the canvas is tainted
+          // or video state is bad. Skip this tick; the next RAF retries.
+          // Never crash the loop.
+          console.warn('[SceneCanvas] frame draw failed, skipping:', err)
         }
       }
       rafRef.current = requestAnimationFrame(loop)
@@ -80,7 +115,7 @@ export const SceneCanvas = forwardRef<HTMLCanvasElement, Props>(function SceneCa
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
     }
-  }, [ref])
+  }, [ref, videoRef])
 
   return (
     <div

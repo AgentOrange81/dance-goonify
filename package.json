@@ -10,6 +10,7 @@
     "deploy": "wrangler pages deploy out --project-name dance-goonify"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^1.0.1",
     "next": "^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

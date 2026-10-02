@@ -10,6 +10,7 @@ const PREFERRED_MIME_CHAIN: { mime: string; ext: string }[] = [
   { mime: 'video/webm;codecs=vp9,opus', ext: 'webm' },
   { mime: 'video/webm;codecs=vp9', ext: 'webm' },
   // WebM with VP8 (universal support, slightly larger)
+  { mime: 'video/webm;codecs=vp8,opus', ext: 'webm' },
   { mime: 'video/webm;codecs=vp8', ext: 'webm' },
   // H.264 in MP4 (Safari/iOS native — fallback for cross-platform sharing)
   { mime: 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', ext: 'mp4' },
@@ -53,6 +54,43 @@ export async function recordCanvas(
   const blob = new Blob(chunks, { type: picked.mime })
   const url = URL.createObjectURL(blob)
   return { blob, url, mimeType: picked.mime, ext: picked.ext }
+}
+
+/**
+ * Seek the video to t=0, wait for the seek to land and for the canvas RAF
+ * to paint the new frame, then record exactly one full loop. Use this when
+ * the recording should start on a loop boundary so the clip is always
+ * loop-aligned and looks the same on every take.
+ */
+export async function recordOneLoop(
+  canvas: HTMLCanvasElement,
+  video: HTMLVideoElement,
+): Promise<RecordResult> {
+  const dur = video.duration
+  if (!isFinite(dur) || dur <= 0) {
+    throw new Error('video has no duration yet; wait for it to load')
+  }
+  // Snap to loop start and wait for the browser to paint the new frame.
+  video.currentTime = 0
+  await new Promise<void>((resolve) => {
+    const onSeeked = () => {
+      video.removeEventListener('seeked', onSeeked)
+      resolve()
+    }
+    video.addEventListener('seeked', onSeeked, { once: true })
+    // Safety: if the seek event never fires (already at 0, or browser quirks),
+    // resolve after 250ms so we don't deadlock.
+    setTimeout(resolve, 250)
+  })
+  // The `seeked` event fires when the browser has the new frame data for the
+  // <video>, but the canvas RAF hasn't necessarily painted it yet. Wait two
+  // RAFs so the captureStream's first frame is the real frame 0, not a
+  // seek-in-progress artifact.
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+  // Record one full loop plus a 0.5s tail so the last frame is fully captured.
+  return recordCanvas(canvas, Math.ceil(dur * 1000) + 500)
 }
 
 export function downloadBlob(result: RecordResult, filename: string): void {

@@ -2,7 +2,14 @@
 // we extract whatever is inside that oval and pass it to drawScene as the face patch.
 
 export type FacePatch = {
+  /** Working canvas — gets mutated by the one-shot Lab colour match every time
+   *  the scene changes. Cheap to copy from `originalCanvas` before each match
+   *  so the user's identity is preserved across scene switches. */
   canvas: HTMLCanvasElement   // square, sized to fit the user's oval
+  /** Untouched source canvas with the oval alpha mask already applied. We
+   *  reset `canvas` from this before every colour-match application so a
+   *  scene switch never re-transforms an already-transformed patch. */
+  originalCanvas: HTMLCanvasElement
   oval: {
     cx: number; cy: number; rx: number; ry: number; rotation: number  // patch-local coords
   }
@@ -68,8 +75,17 @@ export function cropOval(
   }
   ctx.putImageData(img, 0, 0)
 
+  // Snapshot the alpha-masked patch into `originalCanvas` before anyone
+  // touches it. The colour-match step resets `canvas` from this on every
+  // scene switch so we never re-transform an already-transformed patch.
+  const originalCanvas = document.createElement('canvas')
+  originalCanvas.width = size
+  originalCanvas.height = size
+  originalCanvas.getContext('2d')!.drawImage(canvas, 0, 0)
+
   return {
     canvas,
+    originalCanvas,
     oval: { cx, cy, rx, ry, rotation: 0 },
     sourceCropRect: { x: cropX, y: cropY, size },
   }

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { FacePatch } from '@/lib/face/crop'
 import { cropOval } from '@/lib/face/crop'
+import { detectFaceOval } from '@/lib/face/detect'
 
 const ACCEPT = 'image/png,image/jpeg,image/webp'
 const MAX_BYTES = 10 * 1024 * 1024
@@ -25,6 +26,7 @@ export function FacePicker({ onFaceReady }: { onFaceReady: (patch: FacePatch) =>
   const [drag, setDrag] = useState<DragMode>(null)
   const [status, setStatus] = useState<'idle' | 'ready'>('idle')
   const [errorMsg, setErrorMsg] = useState<string>('')
+  const [autoDetectStatus, setAutoDetectStatus] = useState<'idle' | 'detecting' | 'found' | 'miss'>('idle')
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const ovalRef = useRef<Oval>(DEFAULT_OVAL)
@@ -51,6 +53,33 @@ export function FacePicker({ onFaceReady }: { onFaceReady: (patch: FacePatch) =>
     setImg(newImg)
     setOval(DEFAULT_OVAL)
     setStatus('ready')
+
+    // Auto-detect face to seed the oval. We do this after setStatus('ready')
+    // so the user can immediately start dragging if the detector is slow or
+    // misses. Detection runs in the background; on success it snaps the oval
+    // onto the detected face.
+    setAutoDetectStatus('detecting')
+    try {
+      const face = await detectFaceOval(newImg)
+      if (face) {
+        const W = newImg.naturalWidth
+        const H = newImg.naturalHeight
+        const detected: Oval = {
+          cx: face.cx / W,
+          cy: face.cy / H,
+          rx: face.rx / W,
+          ry: face.ry / H,
+        }
+        setOval(detected)
+        setAutoDetectStatus('found')
+      } else {
+        setAutoDetectStatus('miss')
+      }
+    } catch {
+      // WASM/model load failed or model parse error — fall back silently to
+      // the default oval; user can drag it into place.
+      setAutoDetectStatus('miss')
+    }
   }, [imgUrl])
 
   // Render the picker: photo with oval overlay + drag handles
@@ -262,14 +291,17 @@ export function FacePicker({ onFaceReady }: { onFaceReady: (patch: FacePatch) =>
           reset oval
         </button>
         <button
-          onClick={() => { setStatus('idle'); if (imgUrl) URL.revokeObjectURL(imgUrl); setImgUrl(null); setImg(null) }}
+          onClick={() => { setStatus('idle'); if (imgUrl) URL.revokeObjectURL(imgUrl); setImgUrl(null); setImg(null); setAutoDetectStatus('idle') }}
           className="bg-ink-700 hover:bg-ink-600 text-gray-300 py-2 px-3 rounded text-sm lowercase transition-colors"
         >
           change photo
         </button>
       </div>
       <p className="text-xs text-gray-500 lowercase text-center">
-        drag the oval to position • drag the edge handles to resize
+        {autoDetectStatus === 'detecting' && <span className="text-teal-glow">detecting face…</span>}
+        {autoDetectStatus === 'found' && <span className="text-teal-glow">face auto-detected · drag to fine-tune</span>}
+        {autoDetectStatus === 'miss' && 'drag the oval to position • drag the edge handles to resize'}
+        {autoDetectStatus === 'idle' && 'drag the oval to position • drag the edge handles to resize'}
       </p>
     </div>
   )
