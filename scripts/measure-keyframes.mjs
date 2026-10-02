@@ -2,10 +2,11 @@
 /**
  * Build-time keyframe measurement for dance-goonify.
  *
- * Drives a real headless Chromium via Playwright to run MediaPipe BlazeFace
- * against every keyframe of every scene's webm. Converts the detector's
- * bounding box + 6 keypoints into a face oval in CANVAS pixel coords
- * (1280×720) and a rough head-yaw estimate in degrees.
+ * Drives a real headless Chromium via Playwright to run MediaPipe
+ * FaceLandmarker against every keyframe of every scene's webm. The landmarker
+ * gives 478 face landmarks plus a 4x4 facial transformation matrix; we read
+ * real head yaw (degrees) directly from the matrix instead of guessing it
+ * from a bbox-asymmetry heuristic.
  *
  * Why this exists:
  *   The first-cut keyframes were hand-measured by extracting frames from the
@@ -21,42 +22,37 @@
  *
  * How it works:
  *   1. Spin up a tiny localhost HTTP server rooted at the repo root, so
- *      `/public/templates/mediapipe/{wasm,blaze_face_short_range.tflite}` and
- *      `/node_modules/@mediapipe/tasks-vision/vision_bundle.mjs` are all
+ *      `/public/templates/mediapipe/{wasm,blaze_face_short_range.tflite,face_landmarker.task}`
+ *      and `/node_modules/@mediapipe/tasks-vision/vision_bundle.mjs` are all
  *      reachable from the probe page.
  *   2. Launch Playwright Chromium and open scripts/_probe.html, which loads
- *      MediaPipe FaceDetector and exposes a `window.__detect(imageData)`
- *      function for sending frames and getting back detections.
+ *      MediaPipe FaceDetector + FaceLandmarker and exposes
+ *      `window.__detect(imageData)` + `window.__detectPose(imageData)`.
  *   3. Parse lib/scenes.ts to get the scene table → webm paths + keyframe
  *      timestamps.
  *   4. For each scene:
  *        a. Probe duration with ffprobe.
  *        b. For each keyframe t in [0..1], extract the corresponding frame
- *           with ffmpeg at `t * duration` seconds, save to /tmp.
+ *           with ffmpeg (by frame index), save to /tmp.
  *        c. Decode the PNG with sharp → raw RGBA → construct ImageData.
  *        d. Send the ImageData to the probe page via page.evaluate(); receive
- *           detections as JSON.
- *        e. Derive oval center/radii from the bbox (tightened to ~45% width /
- *           55% height, same heuristic as the browser-side FacePicker), scale
+ *           FaceLandmarker output as JSON (bbox + landmarks + transform).
+ *        e. Derive oval center/radii from the landmark-derived bbox, scale
  *           from plate space (1344×768) to canvas space (1280×720).
- *        f. Estimate yaw from the 6 BlazeFace keypoints (eyes/nose/ears):
- *             - If no face detected → yaw = 180 (back of head)
- *             - If face detected → use nose-off-centerline ratio relative to
- *               inter-eye distance, scaled empirically to degrees
- *   5. Print results and dump JSON for diffing/inspection.
- *
- * Yaw estimation note:
- *   BlazeFace doesn't return pose directly; we infer yaw from how far the
- *   nose is offset from the line connecting the two eyes. In front view the
- *   nose is centered; in 90° profile the nose aligns with one eye. The
- *   scaling is empirical — it's accurate enough to drive the renderer
- *   (`frontness = max(0, cos(yawRad))`) for visibility/squash decisions.
+ *        f. Extract head yaw (degrees) directly from the facial transformation
+ *           matrix — atan2(-m20, m22). MediaPipe's positive yaw is "subject
+ *           turns head to their right"; we negate to match the renderer's
+ *           "positive = head turns to viewer's right" convention.
+ *   5. Plausibility-filter detections (reject low-confidence body skin,
+ *      background bokeh), gap-fill with neighbour interpolation or mark as
+ *      back-of-head, and print the final keyframe table.
  *
  * Outputs:
- *   - scripts/keyframes-measured.json: full machine-readable dump
+ *   - scripts/keyframes-measured.json: full machine-readable dump (raw +
+ *     cleaned)
  *   - Pretty-printed keyframe table on stdout (paste into lib/scenes.ts)
  *
- * Runtime: ~20s for both plates (most time is browser launch + detector
+ * Runtime: ~30s for both plates (most time is browser launch + landmarker
  * warm-up). Re-running is cheap.
  */
 
@@ -198,13 +194,15 @@ async function decodePngAsImageData(pngPath) {
 }
 
 /**
- * Render an overlay PNG showing the detected oval(s) and 6 BlazeFace keypoints
- * on top of the source frame. Used for visual verification — look at the
- * generated *-overlay.png files in /tmp/dance-goonify-measure/ to confirm
- * MediaPipe actually locked onto the right region.
+ * Render an overlay PNG showing the detected oval(s) on top of the source
+ * frame. Used for visual verification — look at the generated *-overlay.png
+ * files in /tmp/dance-goonify-measure/ to confirm MediaPipe actually locked
+ * onto the right region. Annotations are drawn in CANVAS-space (1280×720)
+ * coords, scaled from the plate's native resolution.
  *
- * Annotations are drawn in CANVAS-space (1280×720) coordinates, scaled from
- * the plate's native resolution.
+ * For FaceLandmarker output we also render a small subset of the 478
+ * landmarks (eyes, nose, mouth, ear tragions) so you can visually verify the
+ * face orientation matches the reported yaw.
  */
 async function renderOverlay(srcPngPath, detections, outPngPath) {
   const sx = CANVAS_W / PLATE_W
@@ -219,13 +217,23 @@ async function renderOverlay(srcPngPath, detections, outPngPath) {
         const rx = bb.width * 0.45 * sx
         const ry = bb.height * 0.55 * sy
         const color = ['#00ff66', '#ffaa00', '#00ccff'][i % 3]
-        const kp = (d.keypoints || []).map((k, ki) =>
-          `<circle cx="${k.x * sx}" cy="${k.y * sy}" r="4" fill="${color}" stroke="#000" stroke-width="1"/>` +
-          `<text x="${k.x * sx + 6}" y="${k.y * sy + 4}" font-family="monospace" font-size="14" fill="${color}" stroke="#000" stroke-width="0.5">${ki}</text>`
-        ).join('')
+        // Pick a few of the 478 landmarks to render so the overlay isn't
+        // a snowstorm: nose (1), left eye outer (33), right eye outer (263),
+        // mouth left (61), mouth right (291), left ear tragion (234),
+        // right ear tragion (454). These indices come from MediaPipe's
+        // canonical face mesh topology.
+        const landmarkIdx = [1, 33, 263, 61, 291, 234, 454]
+        const kp = (d.landmarks || [])
+          .filter((_, ki) => landmarkIdx.includes(ki))
+          .map((k) =>
+            `<circle cx="${k.x * sx}" cy="${k.y * sy}" r="4" fill="${color}" stroke="#000" stroke-width="1"/>`
+          ).join('')
+        const yawLabel = d.yawDeg === null || d.yawDeg === undefined
+          ? 'yaw=?'
+          : `yaw=${d.yawDeg.toFixed(0)}°`
         return (
           `<ellipse cx="${x}" cy="${y}" rx="${rx}" ry="${ry}" fill="none" stroke="${color}" stroke-width="3"/>` +
-          `<text x="${x + rx + 6}" y="${y - ry - 6}" font-family="monospace" font-size="20" fill="${color}" stroke="#000" stroke-width="1">conf=${d.score?.toFixed(2) ?? '?'}</text>` +
+          `<text x="${x + rx + 6}" y="${y - ry - 6}" font-family="monospace" font-size="20" fill="${color}" stroke="#000" stroke-width="1">${yawLabel}</text>` +
           kp
         )
       }).join('') +
@@ -237,47 +245,27 @@ async function renderOverlay(srcPngPath, detections, outPngPath) {
 }
 
 // ---------------------------------------------------------------------------
-// Yaw estimation from BlazeFace's 6 keypoints
+// Yaw estimation from FaceLandmarker's facialTransformationMatrixes
 // ---------------------------------------------------------------------------
-function estimateYaw(kp) {
-  if (!kp || kp.length < 6) return null
-  const has = (i) => kp[i] && (kp[i].x !== 0 || kp[i].y !== 0)
-  if (!has(2)) return null
-  const eyeRight = has(0) ? kp[0] : null
-  const eyeLeft = has(1) ? kp[1] : null
-  const nose = kp[2]
-  const earRight = has(4) ? kp[4] : null
-  const earLeft = has(5) ? kp[5] : null
-
-  const eyeCount = (eyeRight ? 1 : 0) + (eyeLeft ? 1 : 0)
-  const earCount = (earRight ? 1 : 0) + (earLeft ? 1 : 0)
-  if (eyeCount === 0 && earCount === 0) return 180
-  if (eyeCount < 1) return 90
-
-  let eyeMidX, eyeMidY, eyeDist
-  if (eyeCount === 2) {
-    eyeMidX = (eyeRight.x + eyeLeft.x) / 2
-    eyeMidY = (eyeRight.y + eyeLeft.y) / 2
-    eyeDist = Math.hypot(eyeLeft.x - eyeRight.x, eyeLeft.y - eyeRight.y)
-  } else {
-    const only = eyeRight || eyeLeft
-    eyeMidX = only.x
-    eyeMidY = only.y
-    eyeDist = Math.max(1, only.x * 0.05)
-  }
-
-  const noseOffsetX = (nose.x - eyeMidX) / Math.max(1, eyeDist)
-  let yawMag = (Math.atan(Math.abs(noseOffsetX) * 3) * 180) / Math.PI
-
-  if (earCount === 1) {
-    const ear = earRight || earLeft
-    const earDist = Math.hypot(ear.x - eyeMidX, ear.y - eyeMidY) / Math.max(1, eyeDist)
-    if (earDist > 1.0) yawMag = Math.max(yawMag, 50)
-    else if (earDist > 0.6) yawMag = Math.max(yawMag, 30)
-  }
-
-  const yawSign = noseOffsetX > 0 ? -1 : +1
-  return Math.max(0, Math.min(90, yawMag * yawSign))
+// The transformation matrix is a 4x4 row-major Float32Array(16) that maps a
+// canonical face model (facing +Z) into camera-space. Yaw is the rotation
+// around the model's Y-axis: yaw = atan2(-m20, m22). Index mapping (row*4+col):
+//   m20 = t[8]    m22 = t[10]
+// MediaPipe's positive yaw = subject turning head to their right (viewer's
+// left); our renderer uses positive = viewer's right, so we negate.
+//
+// The MediaPipe bundle exposes this matrix as a flat JS array (we Array.from
+// the underlying Float32Array in the probe), so `t.length === 16` and the
+// indexing is straightforward.
+//
+// When the landmarker doesn't detect a face at all (back of head, edge of
+// frame) we can't read a transform — return null so the caller can decide
+// whether to mark the frame as back-of-head (yaw=180) or interpolate.
+function readYawFromTransform(t) {
+  if (!t || t.length !== 16) return null
+  const sinYaw = -t[8]
+  const cosYaw = t[10]
+  return -(Math.atan2(sinYaw, cosYaw) * (180) / Math.PI)
 }
 
 // ---------------------------------------------------------------------------
@@ -338,49 +326,48 @@ async function main() {
       extractFrame(webmPath, frameIndex, pngPath)
       const { width, height, data } = await decodePngAsImageData(pngPath)
 
-      // Send ImageData to the probe page; get detections back as JSON.
+      // Send ImageData to the probe page; get landmarker output back as JSON.
+      // FaceLandmarker gives us bbox (derived from 478 landmarks) + 3D pose.
       const detections = await page.evaluate(async ({ width, height, data }) => {
         const id = new ImageData(new Uint8ClampedArray(data), width, height)
-        return await window.__detect(id)
+        return await window.__detectPose(id)
       }, { width, height, data })
 
-      // Filter to detections that look plausibly like the dancer's face.
-      // Plausibility gates (in CANVAS-space):
-      //   1. confidence >= MIN_CONF (0.5): below that MediaPipe often latches
-      //      onto skin patches in arms/torso/bokeh balls.
-      //   2. bbox center cx within [200, 1080] — catches jumps like the
-      //      t=0.166 front-grind frame where MediaPipe locked onto a
-      //      background light at cx=1151 while every other frame is around
-      //      cx=700.
-      //   3. bbox center cy < 350 — faces are in the upper half of the frame;
-      //      the dance plate has arms/torso/hips in the lower half. Kills
-      //      false positives on bare midriff/arms (we had a 0.58 conf one
-      //      at cy=435 that slipped past conf+cx alone).
-      //   4. rx <= 100, ry <= 120 — faces are consistent in size across the
-      //      loop; skin-on-body detections often have a larger bbox.
-      const MIN_CONF = 0.5
-      const confident = detections.filter((d) => (d.score ?? 0) >= MIN_CONF)
-      const plausible = confident.filter((d) => {
+      // Plausibility gates (in CANVAS-space) — same logic as before, now
+      // applied to landmarker output:
+      //   1. bbox center cx within [200, 1080] — kills jumps to background
+      //      lights or far edges.
+      //   2. bbox center cy < 350 — faces are upper half; body skin is
+      //      lower half.
+      //   3. rx <= 100, ry <= 120 — face bbox is consistent across frames;
+      //      body skin patches are larger.
+      // FaceLandmarker doesn't expose a confidence score, so we don't filter
+      // on conf — the geometric gates are sufficient.
+      const plausible = detections.filter((d) => {
         if (!d.bbox) return false
         const cxPlate = d.bbox.originX + d.bbox.width / 2
         const cyPlate = d.bbox.originY + d.bbox.height / 2
         const cxCanvas = cxPlate * (CANVAS_W / PLATE_W)
         const cyCanvas = cyPlate * (CANVAS_H / PLATE_H)
-        const rxCanvas = d.bbox.width * 0.45 * (CANVAS_W / PLATE_W)
-        const ryCanvas = d.bbox.height * 0.55 * (CANVAS_H / PLATE_H)
+        const rxCanvas = d.bbox.width * (CANVAS_W / PLATE_W)
+        const ryCanvas = d.bbox.height * (CANVAS_H / PLATE_H)
         return cxCanvas >= 200 && cxCanvas <= 1080
           && cyCanvas < 350
-          && rxCanvas <= 100 && ryCanvas <= 120
+          && rxCanvas <= 220 && ryCanvas <= 280
       })
 
       // Render overlay for visual inspection regardless of detection state.
       await renderOverlay(pngPath, plausible, join(TMP_DIR, `${scene.id}-${kf.t.toFixed(3)}-overlay.png`))
 
       if (plausible.length === 0) {
-        if (confident.length > 0) {
-          console.log(`    t=${kf.t.toFixed(3)}  detection rejected (off-frame): ${confident.map((d) => `cx=${Math.round((d.bbox.originX + d.bbox.width / 2) * (CANVAS_W / PLATE_W))}`).join(', ')}`)
-        } else if (detections.length > 0) {
-          console.log(`    t=${kf.t.toFixed(3)}  low-confidence detection(s): ${detections.map((d) => `conf=${d.score?.toFixed(2)}`).join(', ')}`)
+        if (detections.length > 0) {
+          const reasons = detections.map((d) => {
+            if (!d.bbox) return 'no-bbox'
+            const cx = Math.round((d.bbox.originX + d.bbox.width / 2) * (CANVAS_W / PLATE_W))
+            const cy = Math.round((d.bbox.originY + d.bbox.height / 2) * (CANVAS_H / PLATE_H))
+            return `cx=${cx} cy=${cy}`
+          }).join(', ')
+          console.log(`    t=${kf.t.toFixed(3)}  detection rejected: ${reasons}`)
         } else {
           console.log(`    t=${kf.t.toFixed(3)}  NO FACE DETECTED`)
         }
@@ -395,6 +382,7 @@ async function main() {
         if (a > bestArea) { bestArea = a; best = d }
       }
       const bb = best.bbox
+      // Tighten the full-face bbox to ~face-only (no hair/ears/neck shadow).
       const rxPlate = bb.width * 0.45
       const ryPlate = bb.height * 0.55
       const cxPlate = bb.originX + bb.width / 2
@@ -403,15 +391,16 @@ async function main() {
       const cy = Math.round(cyPlate * (CANVAS_H / PLATE_H))
       const rx = Math.round(rxPlate * (CANVAS_W / PLATE_W))
       const ry = Math.round(ryPlate * (CANVAS_H / PLATE_H))
-      const yaw = estimateYaw(best.keypoints) ?? 180
+      const yaw = readYawFromTransform(best.transform)
 
-      console.log(`    t=${kf.t.toFixed(3)}  cx=${cx} cy=${cy} rx=${rx} ry=${ry} yaw=${yaw}° conf=${best.score.toFixed(2)}`)
+      const yawStr = yaw === null ? '?' : `${yaw.toFixed(0)}°`
+      console.log(`    t=${kf.t.toFixed(3)}  cx=${cx} cy=${cy} rx=${rx} ry=${ry} yaw=${yawStr}`)
       measured.push({
         t: kf.t,
         cx, cy, rx, ry,
-        yaw: Math.round(yaw),
-        confidence: +best.score.toFixed(3),
-        keypoints: best.keypoints?.map((k) => ({ x: Math.round(k.x * 10) / 10, y: Math.round(k.y * 10) / 10 })) || null,
+        yaw: yaw === null ? 180 : Math.round(yaw),
+        confidence: 1,  // FaceLandmarker doesn't return a score; gates already filtered
+        transform: best.transform,
       })
     }
     results.push({ id: scene.id, title: scene.title, dancer: scene.dancer, duration, measured })
@@ -436,31 +425,82 @@ async function main() {
 
   const cleaned = []
   for (const scene of results) {
+    // First pass: identify which no-face frames belong to genuine back-of-head
+    // runs (length ≥ MIN_BACK_OF_HEAD_RUN). Mark those frames up-front so
+    // they don't accidentally get classified as "anchor-borrow" (which would
+    // copy the nearest valid detection's pose and keep the patch visible
+    // during the spin).
+    const MIN_BACK_OF_HEAD_RUN = 3
+    const isNoFace = scene.measured.map((m) => m.cx === null)
+
+    // Find contiguous no-face runs and mark all frames in runs of length ≥ MIN
+    const isBackOfHead = new Array(scene.measured.length).fill(false)
+    {
+      let runStart = -1
+      for (let i = 0; i <= scene.measured.length; i++) {
+        const inNoFace = i < scene.measured.length && isNoFace[i]
+        if (inNoFace && runStart < 0) runStart = i
+        if ((!inNoFace || i === scene.measured.length) && runStart >= 0) {
+          const runLen = i - runStart
+          if (runLen >= MIN_BACK_OF_HEAD_RUN) {
+            for (let j = runStart; j < i; j++) isBackOfHead[j] = true
+          }
+          runStart = -1
+        }
+      }
+    }
+
     const out = []
     for (let i = 0; i < scene.measured.length; i++) {
       const m = scene.measured[i]
-      const prev = i > 0 ? scene.measured[i - 1] : null
-      const next = i < scene.measured.length - 1 ? scene.measured[i + 1] : null
-      const hasPrevFace = prev && prev.cx !== null
-      const hasNextFace = next && next.cx !== null
       if (m.cx !== null) {
         out.push({ ...m, source: 'measured' })
         continue
       }
-      // No face — could be transient miss or back-of-head.
-      // Find nearest frames with valid detections (any direction).
-      const findNearest = (dir) => {
-        for (let j = i + dir; j >= 0 && j < scene.measured.length; j += dir) {
+      if (isBackOfHead[i]) {
+        // Mid-spin / back-of-head. Find the nearest valid detection (any
+        // direction) for cosmetic oval positioning. Don't search past another
+        // back-of-head frame, so we always anchor to a *real* face.
+        const findNearest = (dir) => {
+          for (let j = i + dir; j >= 0 && j < scene.measured.length; j += dir) {
+            if (scene.measured[j].cx !== null) return scene.measured[j]
+            if (isBackOfHead[j]) return null
+          }
+          return null
+        }
+        const anchor = findNearest(-1) || findNearest(+1)
+        out.push({
+          t: m.t,
+          cx: anchor ? anchor.cx : 640,
+          cy: anchor ? anchor.cy : 220,
+          rx: anchor ? anchor.rx : 82,
+          ry: anchor ? anchor.ry : 99,
+          yaw: 180,
+          confidence: 0,
+          source: 'back-of-head',
+        })
+        continue
+      }
+
+      // Transient miss (single no-face frame, not in a back-of-head run).
+      // Find nearest valid detection in each direction.
+      const left = (() => {
+        for (let j = i - 1; j >= 0; j--) {
           if (scene.measured[j].cx !== null) return scene.measured[j]
+          if (isBackOfHead[j]) return null
         }
         return null
-      }
-      const left = findNearest(-1)
-      const right = findNearest(+1)
+      })()
+      const right = (() => {
+        for (let j = i + 1; j < scene.measured.length; j++) {
+          if (scene.measured[j].cx !== null) return scene.measured[j]
+          if (isBackOfHead[j]) return null
+        }
+        return null
+      })()
 
-      if (left && right && Math.abs(left.t - m.t) <= 0.25 && Math.abs(right.t - m.t) <= 0.25) {
-        // Transient miss — both sides have valid faces within ~0.25 in t.
-        // Interpolate.
+      // If both within 0.3 of t, linearly interpolate (smooth occlusion).
+      if (left && right && Math.abs(left.t - m.t) <= 0.3 && Math.abs(right.t - m.t) <= 0.3) {
         const u = (m.t - left.t) / (right.t - left.t)
         out.push({
           t: m.t,
@@ -468,26 +508,37 @@ async function main() {
           cy: Math.round(left.cy + (right.cy - left.cy) * u),
           rx: Math.round(left.rx + (right.rx - left.rx) * u),
           ry: Math.round(left.ry + (right.ry - left.ry) * u),
-          yaw: 0,  // assume front-facing (the gap is likely occlusion)
+          yaw: 0,
           confidence: +Math.min(left.confidence, right.confidence).toFixed(3),
           source: 'interpolated',
         })
         continue
       }
 
-      // No neighbors with face → back of head mid-spin.
-      // Use the nearest valid detection's position as placeholder so the oval
-      // sits somewhere on the head silhouette (the patch is invisible at
-      // yaw=180 anyway, but the placement helps future debug).
+      // Boundary frame (next to a back-of-head sequence) — borrow the
+      // nearest valid detection's pose. The renderer interpolates smoothly
+      // through the yaw=90 dead zone between back-of-head and the neighbor.
       const anchor = left || right
+      if (anchor) {
+        out.push({
+          t: m.t,
+          cx: anchor.cx,
+          cy: anchor.cy,
+          rx: anchor.rx,
+          ry: anchor.ry,
+          yaw: anchor.yaw,
+          confidence: anchor.confidence,
+          source: 'anchor-borrow',
+        })
+        continue
+      }
+
+      // Truly isolated no-face frame (e.g., loader hiccup). Default to
+      // back-of-head so the patch stays consistent.
       out.push({
         t: m.t,
-        cx: anchor ? anchor.cx : 640,
-        cy: anchor ? anchor.cy : 220,
-        rx: anchor ? anchor.rx : 82,
-        ry: anchor ? anchor.ry : 99,
-        yaw: 180,
-        confidence: 0,
+        cx: 640, cy: 220, rx: 82, ry: 99,
+        yaw: 180, confidence: 0,
         source: 'back-of-head',
       })
     }

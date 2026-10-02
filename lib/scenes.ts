@@ -7,20 +7,21 @@
  * [0..1]. `faceHoleAt(scene, t)` linearly interpolates between keyframes.
  *
  * Keyframes are auto-measured by `pnpm measure-keyframes`, which spins up a
- * headless Chromium, runs MediaPipe BlazeFace against every keyframe of every
- * scene's webm, and converts the detector's bbox + 6 keypoints into a face
- * oval + rough head-yaw estimate. Re-run that command after regenerating a
- * plate; the script writes `scripts/keyframes-measured.json` and prints a
- * paste-ready table.
+ * headless Chromium, runs MediaPipe FaceLandmarker against every keyframe of
+ * every scene's webm, and extracts (a) a face-only bbox from the 478
+ * landmarks and (b) real head yaw (0..180°) from the 4×4 facial transformation
+ * matrix. Re-run that command after regenerating a plate; the script writes
+ * `scripts/keyframes-measured.json` and prints a paste-ready table.
  *
  * - The "front" plate is a slow vertical bob with a tiny horizontal sway.
- *   The dancer's face sits upper-centre; cx sways 646-720 and cy bobs
- *   204-245 over the loop.
+ *   The dancer's face sits upper-centre; cx sways 655-711 and cy bobs
+ *   206-235 over the loop, with consistent ~16-29° yaw (real head angle,
+ *   not a heuristic — she's leaning into a 3/4 stance throughout).
  * - The "side" plate shows the dancer doing a 360° spin around the pole.
- *   The pose-spin-pose structure means yaw = 0 at the start/end keyframes,
- *   jumps to 180° (back of head, patch invisible) for the middle keyframes,
- *   and returns to 0°. The patch fades in/out smoothly across the yaw=90°
- *   dead zone.
+ *   Pose-spin-pose: yaw = 17 → 34 → 180 → 180 → 180 → 39 → 19. The patch
+ *   fades out smoothly through the yaw=90° dead zone between k1 and k2, and
+ *   fades back in between k4 and k5. Back-of-head keyframes (k2-k4) are
+ *   where no face is detectable at all.
  */
 
 export type FaceHoleKeyframe = {
@@ -59,19 +60,20 @@ export const SCENES: Scene[] = [
     dancer: '/templates/scenes/dancer-front-grind.webm',
     track: [
       // H4 plate: GTA Vice City cel-shaded dancer, slow vertical hip-bob
-      // grind. Head fully visible in the upper-centre of the frame, dancer
-      // facing camera throughout (headYaw ≈ 0). All 7 keyframes measured
-      // directly by MediaPipe BlazeFace (see scripts/measure-keyframes.mjs);
-      // rx/ry track the face bbox (tightened 45%/55% like the user's
-      // FacePicker). cx sways ±40px horizontally and cy bobs ±25px
-      // vertically across the loop.
-      { t: 0.000, cx: 694, cy: 223, rx: 82, ry: 99, rotation: 0, headYaw: 1 },
-      { t: 0.166, cx: 695, cy: 235, rx: 84, ry: 101, rotation: 0, headYaw: 0 },
-      { t: 0.333, cx: 697, cy: 218, rx: 85, ry: 102, rotation: 0, headYaw: 1 },
-      { t: 0.500, cx: 720, cy: 216, rx: 87, ry: 104, rotation: 0, headYaw: 1 },
-      { t: 0.666, cx: 673, cy: 204, rx: 81, ry: 97, rotation: 0, headYaw: 0 },
-      { t: 0.833, cx: 646, cy: 245, rx: 84, ry: 101, rotation: 0, headYaw: 0 },
-      { t: 1.000, cx: 694, cy: 223, rx: 81, ry: 97, rotation: 0, headYaw: 1 },
+      // grind. Head fully visible in the upper-centre of the frame; dancer
+      // roughly faces camera with the body turned slightly to her right
+      // (subject's right, viewer's left). MediaPipe FaceLandmarker reports
+      // a consistent ~20° baseline yaw on these frames, which is the real
+      // head pose — the dancer is leaning into a 3/4 stance throughout.
+      // cx sways ±40px horizontally and cy bobs ±25px vertically across
+      // the loop; rx/ry track the face bbox (tightened to face-only).
+      { t: 0.000, cx: 697, cy: 210, rx: 76, ry: 101, rotation: 0, headYaw: 16 },
+      { t: 0.166, cx: 701, cy: 230, rx: 73, ry: 97, rotation: 0, headYaw: 18 },
+      { t: 0.333, cx: 690, cy: 223, rx: 83, ry: 102, rotation: 0, headYaw: 22 },
+      { t: 0.500, cx: 711, cy: 216, rx: 77, ry: 101, rotation: 0, headYaw: 22 },
+      { t: 0.666, cx: 676, cy: 206, rx: 67, ry: 98, rotation: 0, headYaw: 29 },
+      { t: 0.833, cx: 655, cy: 235, rx: 74, ry: 97, rotation: 0, headYaw: 19 },
+      { t: 1.000, cx: 696, cy: 210, rx: 76, ry: 101, rotation: 0, headYaw: 17 },
     ],
   },
   {
@@ -79,24 +81,24 @@ export const SCENES: Scene[] = [
     title: 'side',
     dancer: '/templates/scenes/dancer-side-grind.webm',
     track: [
-      // H4 plate: pose-spin-pose. First/last quarter = dancer facing camera
-      // (headYaw = 0). Middle = 360° spin (headYaw = 180, patch invisible).
-      // Position at the back-of-head keyframes (k2..k4) is purely cosmetic —
-      // `frontness = max(0, cos(yaw)) = 0` so the patch is skipped entirely.
-      // We anchor the back-of-head oval to k1's position (head tilted down,
-      // closest valid detection) so the metadata is at least consistent.
-      // k1 face is partially occluded by the head tilt (eyes closed) — conf
-      // 0.53 but bbox is in the right place, kept.
-      // k5 face is fully visible with head turned slightly — conf 0.59,
-      // kept.
-      // Loop wraps cleanly: t=0 and t=1 are the same front-facing pose.
-      { t: 0.000, cx: 696, cy: 222, rx: 82, ry: 99, rotation: 0, headYaw: 1 },
-      { t: 0.166, cx: 612, cy: 154, rx: 76, ry: 91, rotation: 0, headYaw: 0 },
-      { t: 0.333, cx: 612, cy: 154, rx: 76, ry: 91, rotation: 0, headYaw: 180 },
-      { t: 0.500, cx: 612, cy: 154, rx: 76, ry: 91, rotation: 0, headYaw: 180 },
-      { t: 0.666, cx: 612, cy: 154, rx: 76, ry: 91, rotation: 0, headYaw: 180 },
-      { t: 0.833, cx: 585, cy: 133, rx: 78, ry: 94, rotation: 0, headYaw: 0 },
-      { t: 1.000, cx: 693, cy: 224, rx: 81, ry: 97, rotation: 0, headYaw: 1 },
+      // H4 plate: pose-spin-pose. k0/k1 = dancer facing camera with chin
+      // tucked (yaw 17-34°). k2/k3/k4 = mid-spin, back of head (FaceLandmarker
+      // can't find a face; yaw = 180 → patch invisible). k5 = dancer facing
+      // camera again with head turned slightly to viewer's right (yaw 39°).
+      // k6 = front-facing, matches k0 for clean loop wrap.
+      //
+      // Linear yaw interpolation across the k1→k2 and k4→k5 transitions
+      // gives the patch a smooth fade-out / fade-in through the yaw=90°
+      // dead zone — better than the old hand-tuned 0/0/180/180/0/60/0.
+      // Back-of-head keyframes use k1's coords as a placeholder (cosmetic
+      // only — patch is invisible at yaw=180).
+      { t: 0.000, cx: 696, cy: 210, rx: 75, ry: 101, rotation: 0, headYaw: 17 },
+      { t: 0.166, cx: 622, cy: 143, rx: 76, ry: 99, rotation: 0, headYaw: 34 },
+      { t: 0.333, cx: 622, cy: 143, rx: 76, ry: 99, rotation: 0, headYaw: 180 },
+      { t: 0.500, cx: 640, cy: 220, rx: 82, ry: 99, rotation: 0, headYaw: 180 },
+      { t: 0.666, cx: 589, cy: 130, rx: 64, ry: 101, rotation: 0, headYaw: 180 },
+      { t: 0.833, cx: 589, cy: 130, rx: 64, ry: 101, rotation: 0, headYaw: 39 },
+      { t: 1.000, cx: 695, cy: 210, rx: 75, ry: 100, rotation: 0, headYaw: 19 },
     ],
   },
 ]

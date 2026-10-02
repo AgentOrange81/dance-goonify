@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Face Detection Probe</title>
+  <title>Face Detection + Landmarker Probe</title>
   <style>
     body { margin: 0; padding: 0; background: #000; color: #fff; font-family: monospace; font-size: 11px; }
     #log { padding: 8px; }
@@ -11,14 +11,15 @@
 <body>
   <div id="log">[probe] booting…</div>
   <script type="module">
-    import { FaceDetector, FilesetResolver } from '/node_modules/@mediapipe/tasks-vision/vision_bundle.mjs'
+    import { FaceDetector, FaceLandmarker, FilesetResolver } from '/node_modules/@mediapipe/tasks-vision/vision_bundle.mjs'
 
     const log = (msg) => { document.getElementById('log').textContent += '\n' + msg }
     window.__probeLog = log
 
     log('[probe] loading WASM from /public/templates/mediapipe/wasm')
     const vision = await FilesetResolver.forVisionTasks('/public/templates/mediapipe/wasm')
-    log('[probe] loading model from /public/templates/mediapipe/blaze_face_short_range.tflite')
+
+    log('[probe] loading FaceDetector (blaze_face_short_range.tflite)')
     const detector = await FaceDetector.createFromOptions(vision, {
       baseOptions: {
         modelAssetPath: '/public/templates/mediapipe/blaze_face_short_range.tflite',
@@ -27,10 +28,29 @@
       runningMode: 'IMAGE',
       minDetectionConfidence: 0.5,
     })
-    log('[probe] detector ready')
 
-    // Expose a synchronous detect(imageData) → JSON-friendly detections.
-    window.__detect = async function (imageData) {
+    log('[probe] loading FaceLandmarker (face_landmarker.task)')
+    const landmarker = await FaceLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: '/public/templates/mediapipe/face_landmarker.task',
+        delegate: 'CPU',
+      },
+      runningMode: 'IMAGE',
+      outputFaceBlendshapes: false,
+      outputFacialTransformationMatrixes: true,  // gives real yaw/pitch/roll
+      numFaces: 1,
+      // Default thresholds (0.5) are too strict for stylized animation. The
+      // H4 plates are GTA-vibe cartoon-style faces, not photorealistic, and
+      // FaceLandmarker was trained on real humans. Lowering the thresholds
+      // lets us catch partially-occluded faces during the spin.
+      minFaceDetectionConfidence: 0.3,
+      minFacePresenceConfidence: 0.3,
+      minTrackingConfidence: 0.3,
+    })
+    log('[probe] FaceLandmarker ready')
+
+    // ---- FaceDetector (bbox + 6 keypoints) --------------------------------
+    window.__detect = function (imageData) {
       const out = detector.detect(imageData)
       return (out.detections || []).map((d) => ({
         bbox: d.boundingBox ? {
@@ -43,6 +63,59 @@
         keypoints: (d.keypoints || []).map((k) => ({ x: k.x, y: k.y })),
       }))
     }
+
+    // ---- FaceLandmarker (478 landmarks + 3D pose) -------------------------
+    // Returns per-face:
+    //   bbox:          { originX, originY, width, height } derived from landmarks
+    //   landmarks:     478 {x, y, z} normalized image-space points
+    //   worldLandmarks: 478 {x, y, z} metric-world-space points (units ≈ meters)
+    //   transform:     16-element Float32Array — head pose matrix in row-major
+    //   yawDeg:        computed head yaw in degrees from transform matrix
+    //                  (positive = head turned to viewer's right)
+    window.__detectPose = function (imageData) {
+      const out = landmarker.detect(imageData)
+      return (out.faceLandmarks || []).map((lms, i) => {
+        // Derive a bbox from the 478 landmarks (axis-aligned).
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+        for (const lm of lms) {
+          if (lm.x < minX) minX = lm.x
+          if (lm.y < minY) minY = lm.y
+          if (lm.x > maxX) maxX = lm.x
+          if (lm.y > maxY) maxY = lm.y
+        }
+        const W = imageData.width
+        const H = imageData.height
+        const bbox = {
+          originX: minX * W,
+          originY: minY * H,
+          width: (maxX - minX) * W,
+          height: (maxY - minY) * H,
+        }
+        // Real head pose from the 4x4 transformation matrix. The bundle returns
+        // the matrix as {rows, columns, data: Float32Array} where data is
+        // row-major of length rows*columns. For face_landmarker.task the
+        // expected shape is 4×4. Yaw is rotation around the model's Y-axis:
+        //   yaw = atan2(-m20, m22) where m20=data[8], m22=data[10]
+        // MediaPipe's positive yaw = subject turning head to their right
+        // (viewer's left); our renderer uses positive = viewer's right.
+        // Negate.
+        let yawDeg = null
+        const t = out.facialTransformationMatrixes?.[i]
+        if (t && t.data && t.rows === 4 && t.columns === 4) {
+          const m = t.data
+          yawDeg = -(Math.atan2(-m[8], m[10]) * (180 / Math.PI))
+        }
+        return {
+          bbox,
+          landmarks: lms.map((lm) => ({ x: lm.x, y: lm.y, z: lm.z })),
+          worldLandmarks: (out.faceLandmarksWorld?.[i] || []).map((lm) => ({ x: lm.x, y: lm.y, z: lm.z })),
+          // Send data as Array.from(plain) for clean serialization.
+          transform: t?.data ? Array.from(t.data) : null,
+          yawDeg,
+        }
+      })
+    }
+
     window.__ready = true
     log('[probe] __ready = true')
   </script>
