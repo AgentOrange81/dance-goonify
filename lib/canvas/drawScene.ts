@@ -3,6 +3,7 @@ import { CANVAS_W, CANVAS_H } from '../scenes'
 import type { FacePatch } from '../face/crop'
 import { transferPatchToMatch } from '../color/transfer'
 import { drawWarpedFace, type Point } from '../face/warp'
+import { synthesizeFaceLandmarks } from '../face/synthesize'
 
 export type DrawAssets = {
   dancer: HTMLVideoElement
@@ -202,15 +203,21 @@ export function drawScene(
 
   if (
     frontness >= 0.01
-    && fh.landmarks
-    && fh.landmarks.length === 478
     && assets.facePatch.sourceLandmarks
     && assets.facePatch.sourceLandmarks.length === 478
   ) {
+    // Prefer measured dancer-face landmarks when present (more accurate —
+    // tracks the dancer's actual face pose). Fall back to synthesizing the
+    // canonical MediaPipe mesh from (cx, cy, rx, ry, rotation) so blankface
+    // plates (where MediaPipe can't detect features) still get the warp
+    // draw path instead of falling through to the oval legacy path.
+    const dancerLandmarks: Point[] = (fh.landmarks && fh.landmarks.length === 478)
+      ? (fh.landmarks as Point[])
+      : synthesizeFaceLandmarks(fh.cx, fh.cy, fh.rx, fh.ry, fh.rotation)
     drawWarpedFace(
       ctx,
       assets.facePatch.sourceLandmarks,
-      fh.landmarks as Point[],
+      dancerLandmarks,
       assets.facePatch.sourceImage,
       frontness,
     )
