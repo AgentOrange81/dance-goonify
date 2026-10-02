@@ -47,9 +47,9 @@ export default function HomePage() {
 
           <section>
             <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-2">
-              3. download
+              3. record
             </h2>
-            <RecordButton canvasRef={canvasRef} videoRef={videoRef} />
+            <RecordButton canvasRef={canvasRef} videoRef={videoRef} sceneId={sceneId} />
           </section>
         </div>
 
