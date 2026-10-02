@@ -19,20 +19,44 @@ const DEFAULT_OVAL: Oval = { cx: 0.5, cy: 0.4, rx: 0.18, ry: 0.22 }
 
 type DragMode = 'move' | 'resize-rx' | 'resize-ry' | null
 
+type View = 'idle' | 'camera' | 'ready'
+
 export function FacePicker({ onFaceReady }: { onFaceReady: (patch: FacePatch) => void }) {
   const [img, setImg] = useState<HTMLImageElement | null>(null)
   const [imgUrl, setImgUrl] = useState<string | null>(null)
   const [oval, setOval] = useState<Oval>(DEFAULT_OVAL)
   const [drag, setDrag] = useState<DragMode>(null)
-  const [status, setStatus] = useState<'idle' | 'ready'>('idle')
+  const [view, setView] = useState<View>('idle')
   const [errorMsg, setErrorMsg] = useState<string>('')
   const [autoDetectStatus, setAutoDetectStatus] = useState<'idle' | 'detecting' | 'found' | 'miss'>('idle')
+  // Camera capture state
+  const [cameraError, setCameraError] = useState<string>('')
+  const [cameraStarting, setCameraStarting] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const cameraStreamRef = useRef<MediaStream | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const ovalRef = useRef<Oval>(DEFAULT_OVAL)
   const dragRef = useRef<{ startX: number; startY: number; startOval: Oval; mode: DragMode } | null>(null)
 
   useEffect(() => { ovalRef.current = oval }, [oval])
+
+  // Stop any active camera stream when leaving the camera view or unmounting.
+  useEffect(() => {
+    if (view !== 'camera') {
+      const s = cameraStreamRef.current
+      if (s) {
+        s.getTracks().forEach((t) => t.stop())
+        cameraStreamRef.current = null
+      }
+      if (videoRef.current) videoRef.current.srcObject = null
+    }
+  }, [view])
+
+  useEffect(() => () => {
+    const s = cameraStreamRef.current
+    if (s) s.getTracks().forEach((t) => t.stop())
+  }, [])
 
   const handleFile = useCallback(async (file: File) => {
     setErrorMsg('')
@@ -52,9 +76,9 @@ export function FacePicker({ onFaceReady }: { onFaceReady: (patch: FacePatch) =>
     })
     setImg(newImg)
     setOval(DEFAULT_OVAL)
-    setStatus('ready')
+    setView('ready')
 
-    // Auto-detect face to seed the oval. We do this after setStatus('ready')
+    // Auto-detect face to seed the oval. We do this after setView('ready')
     // so the user can immediately start dragging if the detector is slow or
     // misses. Detection runs in the background; on success it snaps the oval
     // onto the detected face.
@@ -81,6 +105,69 @@ export function FacePicker({ onFaceReady }: { onFaceReady: (patch: FacePatch) =>
       setAutoDetectStatus('miss')
     }
   }, [imgUrl])
+
+  // ---- Camera capture ----------------------------------------------------
+  const startCamera = useCallback(async () => {
+    setCameraError('')
+    setCameraStarting(true)
+    try {
+      // Prefer front-facing camera (mobile selfie default). Desktop browsers
+      // fall back to whatever the default camera is.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'user',
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      })
+      cameraStreamRef.current = stream
+      setView('camera')
+      // Attach stream to the <video> element after it mounts.
+      requestAnimationFrame(() => {
+        const v = videoRef.current
+        if (v) {
+          v.srcObject = stream
+          v.play().catch(() => { /* autoplay restrictions, user will tap to play */ })
+        }
+      })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (/denied|permission/i.test(msg)) {
+        setCameraError('camera permission denied — use file upload instead')
+      } else if (/NotFound|no.*camera/i.test(msg)) {
+        setCameraError('no camera found — use file upload instead')
+      } else {
+        setCameraError(`camera error: ${msg}`)
+      }
+    } finally {
+      setCameraStarting(false)
+    }
+  }, [])
+
+  const snapPhoto = useCallback(() => {
+    const v = videoRef.current
+    if (!v || !v.videoWidth) return
+    // Mirror the snap horizontally so the captured image matches the mirrored
+    // preview the user saw (front cameras are typically mirrored).
+    const w = v.videoWidth
+    const h = v.videoHeight
+    const c = document.createElement('canvas')
+    c.width = w
+    c.height = h
+    const ctx = c.getContext('2d')
+    if (!ctx) return
+    ctx.save()
+    ctx.translate(w, 0)
+    ctx.scale(-1, 1)
+    ctx.drawImage(v, 0, 0, w, h)
+    ctx.restore()
+    c.toBlob((blob) => {
+      if (!blob) return
+      const file = new File([blob], 'camera-snap.jpg', { type: 'image/jpeg' })
+      void handleFile(file)
+    }, 'image/jpeg', 0.92)
+  }, [handleFile])
 
   // Render the picker: photo with oval overlay + drag handles
   useEffect(() => {
@@ -235,6 +322,8 @@ export function FacePicker({ onFaceReady }: { onFaceReady: (patch: FacePatch) =>
   const onInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
     if (f) handleFile(f)
+    // Reset the input so picking the same file again re-triggers onChange.
+    e.target.value = ''
   }
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault()
@@ -242,28 +331,102 @@ export function FacePicker({ onFaceReady }: { onFaceReady: (patch: FacePatch) =>
     if (f) handleFile(f)
   }
 
-  if (status !== 'ready' || !img) {
+  const resetToIdle = useCallback(() => {
+    setView('idle')
+    if (imgUrl) URL.revokeObjectURL(imgUrl)
+    setImgUrl(null)
+    setImg(null)
+    setAutoDetectStatus('idle')
+    setErrorMsg('')
+  }, [imgUrl])
+
+  // ---- Render: idle (no image yet) ---------------------------------------
+  if (view === 'idle') {
     return (
-      <div
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={onDrop}
-        className="relative w-full aspect-video border-2 border-dashed border-teal/40 bg-ink-800 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-teal-glow/60 transition-colors"
-        onClick={() => document.getElementById('face-picker-input')?.click()}
-      >
-        <input
-          id="face-picker-input"
-          type="file"
-          accept={ACCEPT}
-          className="hidden"
-          onChange={onInputChange}
-        />
-        <div className="text-gold text-4xl mb-3 lowercase">✦</div>
-        <p className="text-gray-300 text-sm lowercase">drop your photo here</p>
-        <p className="text-gray-500 text-xs mt-1 lowercase">or click to choose</p>
-        {errorMsg && <p className="text-red-400 text-xs mt-3 lowercase">{errorMsg}</p>}
+      <div className="space-y-3">
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={onDrop}
+          className="relative w-full aspect-video border-2 border-dashed border-teal/40 bg-ink-800 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-teal-glow/60 transition-colors"
+          onClick={() => document.getElementById('face-picker-input')?.click()}
+        >
+          <input
+            id="face-picker-input"
+            type="file"
+            accept={ACCEPT}
+            // `capture="user"` is a hint for mobile browsers — when the user
+            // taps to choose a file, they're offered a camera option that
+            // opens the front-facing cam. Desktop browsers ignore it. This
+            // gives users a second path to camera capture without needing
+            // getUserMedia permissions.
+            capture="user"
+            className="hidden"
+            onChange={onInputChange}
+          />
+          <div className="text-gold text-4xl mb-3 lowercase">✦</div>
+          <p className="text-gray-300 text-sm lowercase">drop your photo here</p>
+          <p className="text-gray-500 text-xs mt-1 lowercase">or click to choose a file</p>
+          {errorMsg && <p className="text-red-400 text-xs mt-3 lowercase">{errorMsg}</p>}
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex-1 h-px bg-ink-700" />
+          <span className="text-gray-500 text-xs lowercase">or</span>
+          <div className="flex-1 h-px bg-ink-700" />
+        </div>
+        <button
+          onClick={startCamera}
+          disabled={cameraStarting}
+          className="w-full bg-teal/20 hover:bg-teal/30 border border-teal/40 text-teal-glow font-medium py-3 rounded text-sm disabled:opacity-50 lowercase transition-colors"
+        >
+          {cameraStarting ? 'starting camera…' : '📷 take a photo with my camera'}
+        </button>
+        {cameraError && <p className="text-red-400 text-xs lowercase text-center">{cameraError}</p>}
       </div>
     )
   }
+
+  // ---- Render: camera (live preview) -------------------------------------
+  if (view === 'camera') {
+    return (
+      <div className="space-y-2">
+        <div
+          className="relative w-full bg-black overflow-hidden rounded-lg border border-teal/30"
+          style={{ aspectRatio: '16 / 9' }}
+        >
+          {/* Mirror the preview horizontally so it matches the user's
+              expectation of a selfie cam (front-facing cameras are typically
+              mirrored in chat apps). */}
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            className="w-full h-full object-cover"
+            style={{ transform: 'scaleX(-1)' }}
+          />
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={snapPhoto}
+            className="flex-1 bg-gold hover:bg-gold/80 text-ink-900 font-medium py-3 rounded text-sm lowercase transition-colors"
+          >
+            ✦ snap
+          </button>
+          <button
+            onClick={() => setView('idle')}
+            className="bg-ink-700 hover:bg-ink-600 text-gray-300 py-3 px-4 rounded text-sm lowercase transition-colors"
+          >
+            cancel
+          </button>
+        </div>
+        <p className="text-xs text-gray-500 lowercase text-center">
+          hold steady · face the camera
+        </p>
+      </div>
+    )
+  }
+
+  // ---- Render: ready (oval picker over the chosen image) -----------------
+  if (view !== 'ready' || !img) return null
 
   return (
     <div ref={containerRef} className="space-y-2">
@@ -291,7 +454,7 @@ export function FacePicker({ onFaceReady }: { onFaceReady: (patch: FacePatch) =>
           reset oval
         </button>
         <button
-          onClick={() => { setStatus('idle'); if (imgUrl) URL.revokeObjectURL(imgUrl); setImgUrl(null); setImg(null); setAutoDetectStatus('idle') }}
+          onClick={resetToIdle}
           className="bg-ink-700 hover:bg-ink-600 text-gray-300 py-2 px-3 rounded text-sm lowercase transition-colors"
         >
           change photo
