@@ -395,12 +395,20 @@ async function main() {
 
       const yawStr = yaw === null ? '?' : `${yaw.toFixed(0)}°`
       console.log(`    t=${kf.t.toFixed(3)}  cx=${cx} cy=${cy} rx=${rx} ry=${ry} yaw=${yawStr}`)
+      // Convert normalized [0..1] landmark coords to CANVAS pixel coords
+      // (1280×720). These get embedded into lib/scenes.ts and used by
+      // lib/face/warp.ts for Delaunay-based face warping.
+      const landmarks = best.landmarks.map((lm) => ({
+        x: Math.round(lm.x * CANVAS_W * 100) / 100,
+        y: Math.round(lm.y * CANVAS_H * 100) / 100,
+      }))
       measured.push({
         t: kf.t,
         cx, cy, rx, ry,
         yaw: yaw === null ? 180 : Math.round(yaw),
         confidence: 1,  // FaceLandmarker doesn't return a score; gates already filtered
         transform: best.transform,
+        landmarks,
       })
     }
     results.push({ id: scene.id, title: scene.title, dancer: scene.dancer, duration, measured })
@@ -551,21 +559,57 @@ async function main() {
   writeFileSync(OUT_JSON, JSON.stringify({ raw: results, cleaned }, null, 2))
   console.log(`\n• Wrote ${OUT_JSON}`)
 
-  console.log('\n• Final keyframe table (auto-measured + interpolated/back-of-head):\n')
-  for (const r of cleaned) {
-    console.log(`// ${r.id} (${r.title}, ${r.duration.toFixed(2)}s)`)
-    for (const m of r.track) {
-      const tag = m.source === 'measured' ? `conf=${m.confidence}` : m.source
-      console.log(`//   t=${m.t.toFixed(3)}  cx=${m.cx} cy=${m.cy} rx=${m.rx} ry=${m.ry} yaw=${m.yaw}  ${tag}`)
-    }
-    console.log(`{`)
-    for (let i = 0; i < r.track.length; i++) {
-      const m = r.track[i]
-      const comma = i < r.track.length - 1 ? ',' : ''
-      console.log(`  { t: ${m.t.toFixed(3)}, cx: ${m.cx}, cy: ${m.cy}, rx: ${m.rx}, ry: ${m.ry}, rotation: 0, headYaw: ${m.yaw} }${comma}`)
-    }
-    console.log(`}`)
+  // Also emit a landmarks-only JSON dump (cleaned track only, omitting the
+  // raw 478-point arrays from the giant OUT_JSON). The script's caller uses
+  // this to copy/paste landmark arrays into lib/scenes.ts without wading
+  // through the full debug dump.
+  const landmarksOut = join(__dirname, 'keyframes-landmarks.json')
+  writeFileSync(
+    landmarksOut,
+    JSON.stringify(
+      cleaned.map((scene) => ({
+        id: scene.id,
+        track: scene.track.map((kf) => ({
+          t: kf.t,
+          cx: kf.cx,
+          cy: kf.cy,
+          rx: kf.rx,
+          ry: kf.ry,
+          headYaw: kf.yaw,
+          landmarks: kf.landmarks ?? null,
+          source: kf.source,
+        })),
+      })),
+      null,
+      2,
+    ),
+  )
+  console.log(`• Wrote ${landmarksOut}`)
+
+  function landmarksToLiteral(lms) {
+  // Compact inline representation: [{x: 123.45, y: 678.90}, ...]
+  return '[' + lms.map((p) => `{x: ${p.x}, y: ${p.y}}`).join(', ') + ']'
+}
+
+console.log('\n• Final keyframe table (auto-measured + interpolated/back-of-head):\n')
+for (const r of cleaned) {
+  console.log(`// ${r.id} (${r.title}, ${r.duration.toFixed(2)}s)`)
+  for (const m of r.track) {
+    const tag = m.source === 'measured' ? `conf=${m.confidence}` : m.source
+    const lmTag = m.landmarks ? `landmarks=${m.landmarks.length}` : 'no-landmarks'
+    console.log(`//   t=${m.t.toFixed(3)}  cx=${m.cx} cy=${m.cy} rx=${m.rx} ry=${m.ry} yaw=${m.yaw}  ${tag}  ${lmTag}`)
   }
+  console.log(`{`)
+  for (let i = 0; i < r.track.length; i++) {
+    const m = r.track[i]
+    const comma = i < r.track.length - 1 ? ',' : ''
+    const lmStr = m.landmarks
+      ? `, landmarks: ${landmarksToLiteral(m.landmarks)}`
+      : ''
+    console.log(`  { t: ${m.t.toFixed(3)}, cx: ${m.cx}, cy: ${m.cy}, rx: ${m.rx}, ry: ${m.ry}, rotation: 0, headYaw: ${m.yaw}${lmStr} }${comma}`)
+  }
+  console.log(`}`)
+}
 
   console.log(`\n• Frames left in ${TMP_DIR} for debugging (delete with: rm -rf ${TMP_DIR})`)
 }

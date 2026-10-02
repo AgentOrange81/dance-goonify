@@ -1,30 +1,40 @@
 /**
- * Browser-side face detection via MediaPipe tasks-vision FaceDetector.
+ * Browser-side face detection via MediaPipe tasks-vision.
  *
- * Lazy-loads the WASM runtime (from /templates/mediapipe/wasm/) and the
- * BlazeFace short-range TFLite model (from /templates/mediapipe/) on first
- * use, then caches the detector for subsequent calls.
+ * Two detectors live here, both backed by the same WASM runtime:
+ *   - FaceDetector (BlazeFace short-range TFLite): fast bbox detection for
+ *     the initial oval placement in FacePicker.
+ *   - FaceLandmarker (face_landmarker.task): slower 478-point mesh used for
+ *     Delaunay-based face warping at composite time.
  *
- * Returns a bounding box in the source image's pixel coordinates, suitable
- * for initialising the FacePicker oval. The oval is intentionally slightly
- * tighter than the raw bbox: faces are usually narrower than their detection
- * boxes (the box includes hair, ears, neck shadow).
+ * Both lazy-load the WASM runtime (from /templates/mediapipe/wasm/) on first
+ * use and cache the detector for subsequent calls.
  */
 
-import { FaceDetector, FilesetResolver, type Detection } from '@mediapipe/tasks-vision'
+import { FaceDetector, FaceLandmarker, FilesetResolver, type Detection } from '@mediapipe/tasks-vision'
 
 const WASM_BASE = '/templates/mediapipe/wasm'
-const MODEL_URL = '/templates/mediapipe/blaze_face_short_range.tflite'
+const FACE_MODEL_URL = '/templates/mediapipe/blaze_face_short_range.tflite'
+const LANDMARK_MODEL_URL = '/templates/mediapipe/face_landmarker.task'
 
+let visionPromise: Promise<Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>> | null = null
 let detectorPromise: Promise<FaceDetector> | null = null
+let landmarkerPromise: Promise<FaceLandmarker> | null = null
 
-function getDetector(): Promise<FaceDetector> {
+async function getVision() {
+  if (!visionPromise) {
+    visionPromise = FilesetResolver.forVisionTasks(WASM_BASE)
+  }
+  return visionPromise
+}
+
+async function getDetector(): Promise<FaceDetector> {
   if (detectorPromise) return detectorPromise
   detectorPromise = (async () => {
-    const vision = await FilesetResolver.forVisionTasks(WASM_BASE)
+    const vision = await getVision()
     return await FaceDetector.createFromOptions(vision, {
       baseOptions: {
-        modelAssetPath: MODEL_URL,
+        modelAssetPath: FACE_MODEL_URL,
         delegate: 'GPU',
       },
       runningMode: 'IMAGE',
@@ -32,6 +42,28 @@ function getDetector(): Promise<FaceDetector> {
     })
   })()
   return detectorPromise
+}
+
+async function getLandmarker(): Promise<FaceLandmarker> {
+  if (landmarkerPromise) return landmarkerPromise
+  landmarkerPromise = (async () => {
+    const vision = await getVision()
+    return await FaceLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: LANDMARK_MODEL_URL,
+        delegate: 'GPU',
+      },
+      runningMode: 'IMAGE',
+      numFaces: 1,
+      // Stylized animation faces score lower than photorealistic ones the
+      // model was trained on — lower thresholds so we catch tilted/occluded
+      // faces in the dancer plates.
+      minFaceDetectionConfidence: 0.3,
+      minFacePresenceConfidence: 0.3,
+      minTrackingConfidence: 0.3,
+    })
+  })()
+  return landmarkerPromise
 }
 
 export type FaceBox = {
@@ -43,6 +75,14 @@ export type FaceBox = {
   /** Confidence score 0..1, useful for telemetry / debug. */
   score: number
 }
+
+/**
+ * One MediaPipe FaceLandmarker landmark, normalized to the source image's
+ * pixel dimensions (multiply `x` by `naturalWidth`, `y` by `naturalHeight`).
+ * `z` is relative depth (smaller = closer to camera); we ignore it for
+ * Delaunay warping since both source and target are 2D.
+ */
+export type FaceLandmark = { x: number; y: number; z: number }
 
 /**
  * Detect the largest face in the image and return an oval that roughly
@@ -83,4 +123,21 @@ export async function detectFaceOval(image: HTMLImageElement): Promise<FaceBox |
     ry,
     score: best.categories?.[0]?.score ?? 0,
   }
+}
+
+/**
+ * Detect the largest face in the image and return 478 FaceLandmarker
+ * landmarks in the source image's pixel coordinates. The landmarker is the
+ * heavier of the two detectors (~3.6MB model + slower inference) — only
+ * call this when you need Delaunay warping, not for the simple oval case.
+ *
+ * Returns `null` if no face is detected.
+ */
+export async function detectFaceLandmarks(image: HTMLImageElement): Promise<FaceLandmark[] | null> {
+  const landmarker = await getLandmarker()
+  const results = landmarker.detect(image)
+  const lms = results.faceLandmarks
+  if (!lms || lms.length === 0) return null
+  // Single-face mode → take index 0.
+  return lms[0].map((lm) => ({ x: lm.x, y: lm.y, z: lm.z }))
 }

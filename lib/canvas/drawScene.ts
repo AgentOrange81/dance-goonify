@@ -2,12 +2,15 @@ import type { Scene, FaceHoleKeyframe } from '../scenes'
 import { CANVAS_W, CANVAS_H } from '../scenes'
 import type { FacePatch } from '../face/crop'
 import { transferPatchToMatch } from '../color/transfer'
+import { drawWarpedFace, type Point } from '../face/warp'
 
 export type DrawAssets = {
   dancer: HTMLVideoElement
   facePatch: FacePatch | null
   /** Multiplier on the patch's oval → destination oval fit. 1 = exact fit,
-   *  >1 = patch grows past the oval boundary, <1 = patch shrinks inside. */
+   *  >1 = patch grows past the oval boundary, <1 = patch shrinks inside.
+   *  Only used by the legacy oval fallback; ignored when landmarks are
+   *  available (Delaunay warping handles sizing internally). */
   cropTightness: number
 }
 
@@ -176,10 +179,12 @@ export function drawPatch(
 }
 
 /**
- * Convenience: draw a complete frame (video + optional patch + ring). Most
- * call sites should use `drawVideoFrame` + `applyOneShotColorMatch` (when the
- * (scene, patch) pair changes) + `drawPatch` for finer control over when the
- * Lab sample is taken.
+ * Convenience: draw a complete frame (video + optional patch + ring).
+ *
+ * Dispatcher: if the FacePatch has landmarks AND the keyframe has landmarks,
+ * use Delaunay-based warping (the user's face conforms to the dancer's
+ * actual face shape — eyes/mouth track the dancer's expressions). Otherwise
+ * fall back to the legacy oval-based drawPatch.
  */
 export function drawScene(
   ctx: CanvasRenderingContext2D,
@@ -189,9 +194,30 @@ export function drawScene(
 ): void {
   void scene // scene param kept for API parity / future scene-level overlays
   drawVideoFrame(ctx, assets.dancer)
-  if (assets.facePatch) {
-    drawPatch(ctx, fh, assets.facePatch, assets.cropTightness)
+  if (!assets.facePatch) return
+
+  // Compute once: frontness drives the fade-in/out for back-of-head frames.
+  const yawRad = (fh.headYaw * Math.PI) / 180
+  const frontness = Math.max(0, Math.cos(yawRad))
+
+  if (
+    frontness >= 0.01
+    && fh.landmarks
+    && fh.landmarks.length === 478
+    && assets.facePatch.sourceLandmarks
+    && assets.facePatch.sourceLandmarks.length === 478
+  ) {
+    drawWarpedFace(
+      ctx,
+      assets.facePatch.sourceLandmarks,
+      fh.landmarks as Point[],
+      assets.facePatch.sourceImage,
+      frontness,
+    )
+    return
   }
+  // Fallback: legacy oval mask.
+  drawPatch(ctx, fh, assets.facePatch, assets.cropTightness)
 }
 
 /**

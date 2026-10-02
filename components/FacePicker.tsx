@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { FacePatch } from '@/lib/face/crop'
 import { cropOval } from '@/lib/face/crop'
-import { detectFaceOval } from '@/lib/face/detect'
+import { detectFaceOval, detectFaceLandmarks } from '@/lib/face/detect'
 import { loadOval, saveOval, loadFaceImage, saveFaceImage, clearPersistedFace } from '@/lib/storage'
 
 const ACCEPT = 'image/png,image/jpeg,image/webp'
@@ -360,15 +360,33 @@ export function FacePicker({ onFaceReady }: { onFaceReady: (patch: FacePatch) =>
     ;(e.target as HTMLElement).releasePointerCapture?.(e.pointerId)
   }, [])
 
-  const onConfirm = useCallback(() => {
+  const onConfirm = useCallback(async () => {
     if (!img) return
     const W = img.naturalWidth
     const H = img.naturalHeight
+    // Run FaceLandmarker on the user's photo to get 478 landmarks for
+    // Delaunay warping. Best-effort — if it fails (stylized face didn't
+    // pass thresholds), we still produce a patch; the renderer will fall
+    // back to the legacy oval path because `sourceLandmarks` is null.
+    let sourceLandmarks = null
+    try {
+      const rawLm = await detectFaceLandmarks(img)
+      if (rawLm && rawLm.length === 478) {
+        sourceLandmarks = rawLm.map((lm) => ({
+          x: lm.x * W,
+          y: lm.y * H,
+          z: lm.z,
+        }))
+      }
+    } catch {
+      // Landmarker load failed; legacy path will be used at render time.
+    }
     const patch = cropOval(img, {
       cx: oval.cx * W,
       cy: oval.cy * H,
       rx: oval.rx * W,
       ry: oval.ry * H,
+      landmarks: sourceLandmarks,
     })
     onFaceReady(patch)
   }, [img, oval, onFaceReady])

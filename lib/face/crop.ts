@@ -1,6 +1,8 @@
 // User-drawn oval face picker. The user drags/resizes an oval on their photo,
 // we extract whatever is inside that oval and pass it to drawScene as the face patch.
 
+import type { FaceLandmark } from './detect'
+
 export type FacePatch = {
   /** Working canvas — gets mutated by the one-shot Lab colour match every time
    *  the scene changes. Cheap to copy from `originalCanvas` before each match
@@ -10,21 +12,42 @@ export type FacePatch = {
    *  reset `canvas` from this before every colour-match application so a
    *  scene switch never re-transforms an already-transformed patch. */
   originalCanvas: HTMLCanvasElement
+  /** The original user photo. Kept around so the Delaunay warper can sample
+   *  arbitrary pixels (not just inside the oval mask) when warping triangles
+   *  to fit the dancer's face shape. The colour-match path still uses
+   *  `originalCanvas` (which already has the alpha mask applied) so the Lab
+   *  sample reflects what we'll actually draw. */
+  sourceImage: HTMLImageElement
+  /** 478-point face mesh from MediaPipe FaceLandmarker, in the source
+   *  image's pixel coords. `null` if landmark detection failed (e.g.,
+   *  stylized face didn't pass thresholds) — the renderer falls back to
+   *  the legacy oval-based path. */
+  sourceLandmarks: FaceLandmark[] | null
   oval: {
     cx: number; cy: number; rx: number; ry: number; rotation: number  // patch-local coords
   }
   sourceCropRect: { x: number; y: number; size: number }  // source-image coords
 }
 
-// Extracts the pixels inside the user-drawn oval from the source image.
-// The oval is in SOURCE IMAGE pixel coordinates. We crop a square region around the oval
-// (size = max(rx, ry) * 2, padded a bit so the full oval fits), then render the source
-// pixels into the patch with the oval masked to a clean ellipse — outside the oval is transparent.
-// The output canvas is square; oval coords inside it are patch-local.
-export function cropOval(
-  source: HTMLImageElement,
-  newOll: { cx: number; cy: number; rx: number; ry: number },
-): FacePatch {
+export type CropOvalOpts = {
+  cx: number; cy: number; rx: number; ry: number
+  /** Optional FaceLandmarker landmarks in source-image pixel coords. Pass
+   *  through from `detectFaceLandmarks` if available. */
+  landmarks?: FaceLandmark[] | null
+}
+
+/**
+ * Extract the pixels inside the user-drawn oval from the source image.
+ * The oval is in SOURCE IMAGE pixel coordinates. We crop a square region
+ * around the oval (size = max(rx, ry) * 2, padded a bit so the full oval
+ * fits), then render the source pixels into the patch with the oval masked
+ * to a clean ellipse — outside the oval is transparent. The output canvas
+ * is square; oval coords inside it are patch-local.
+ *
+ * Also stores the original source image and (optionally) the user's 478-point
+ * face landmarks for Delaunay-based warping at composite time.
+ */
+export function cropOval(source: HTMLImageElement, newOll: CropOvalOpts): FacePatch {
   const W = source.naturalWidth
   const H = source.naturalHeight
 
@@ -86,6 +109,8 @@ export function cropOval(
   return {
     canvas,
     originalCanvas,
+    sourceImage: source,
+    sourceLandmarks: newOll.landmarks ?? null,
     oval: { cx, cy, rx, ry, rotation: 0 },
     sourceCropRect: { x: cropX, y: cropY, size },
   }
