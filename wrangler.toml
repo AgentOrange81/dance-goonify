@@ -1,11 +1,16 @@
 name = "dance-goonify"
 compatibility_date = "2025-01-15"
-pages_build_output_dir = ".next"
+# Static export goes to ./out (next.config.mjs has output: "export").
+# We deploy with `wrangler pages deploy out --project-name dance-goonify`,
+# so this dir is informational for the dashboard.
+pages_build_output_dir = "out"
 
-# Custom domain bindings live in Cloudflare dashboard, not here.
-# Environment variable wiring:
-#   LAPDANCE_WORKER_URL  - if set, /api/lapdance proxies to this worker (Path B)
-#                          when unset, /api/lapdance returns 501 { preview: true }
+# Custom domain bindings live in the Cloudflare dashboard, not here.
+#
+# Environment variables (when wired):
+#   LAPDANCE_WORKER_URL  - if set, the /api/lapdance proxy forwards to this
+#                          server-side worker (Path B). When unset, lapdance
+#                          falls back to the in-browser preview.
 #
 # R2 binding (templates + models) — added when we wire the bucket:
 #   [[r2_buckets]]

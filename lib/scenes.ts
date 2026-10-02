@@ -1,77 +1,85 @@
+/**
+ * Scene definitions for dance.goonify.fun.
+ *
+ * Each scene references a pre-rendered H3 dancer plate (a ping-pong webm that
+ * loops seamlessly) and a keyframe track describing where the dancer's face
+ * oval is in CANVAS pixel coords (1280×720) at evenly-spaced t values in
+ * [0..1]. `faceHoleAt(scene, t)` linearly interpolates between keyframes.
+ *
+ * Keyframes were measured from the actual shipped plates by extracting frames
+ * at the loop's 6 evenly-spaced timestamps, finding the smooth face-oval
+ * placeholder by low-local-variance skin detection, and correcting by eye.
+ *
+ * - The "front" plate is a slow vertical bob with a tiny horizontal sway. The
+ *   dancer's head extends past the top edge of the frame; the oval radii cover
+ *   the entire visible face area (cheekbones → chin, hairline → past frame top).
+ * - The "side" plate shows the dancer doing a 360° spin around the pole. The
+ *   oval stays roughly in the upper-center of the frame but its position and
+ *   radii shift as she turns (largest when facing camera, smallest in profile).
+ */
+
 export type FaceHoleKeyframe = {
   t: number
   cx: number
   cy: number
   rx: number
   ry: number
-  rotation: number
+  rotation: number  // degrees; positive = clockwise
 }
 
 export type Scene = {
   id: string
   title: string
-  background: string
   dancer: string
+  /** Keyframes evenly spaced across t ∈ [0..1]; first and last share values
+   *  so the loop wraps invisibly. */
   track: FaceHoleKeyframe[]
 }
 
-const CLUB_ROOM = '/templates/scenes/club-room-empty.webp'
-
-// Keyframes measured from the NEW H3-regenerated plates (batch2).
-//
-// Front v2 (best loop of 3 variants, wrap diff = 8.46):
-//   - Cinematic front close-up; dancer's head extends beyond the top and right edges
-//   - Visible face oval: center ~ (1000, 160) in native 1344x768
-//   - Scaled to canvas (1280x720): cx ~ 953, cy ~ 150, rx ~ 238 (huge — face fills most of frame), ry ~ 150
-//   - The oval is large and CLOSE; user-drawn face needs to match this scale
-//
-// Side v3 (best loop of 3 variants, wrap diff = 2.29 — perfect loop):
-//   - Full body 3/4 angle, dancer positioned left of frame
-//   - Face oval: native ~ (560, 270) in 1344x768; ~ (560, 240) in 1280x720
-//   - Smaller oval due to wider framing: rx ~ 70, ry ~ 95
-//
-// Source: H3 generations batch2 (front_v2, side_v3). Cost: $2.88 of $15 cap.
-// Measurements: native 1344x768 video frames scaled to 1280x720 canvas coords.
+// Canvas resolution — kept in sync with SceneCanvas.tsx and drawScene.ts.
+export const CANVAS_W = 1280
+export const CANVAS_H = 720
 
 export const SCENES: Scene[] = [
   {
     id: 'club-front-grind',
     title: 'front',
-    background: CLUB_ROOM,
     dancer: '/templates/scenes/dancer-front-grind.webm',
     track: [
-      // The face oval in the source MP4 (1344×768) spans approximately:
-      //   left edge: x=550, right edge: x=1300+ (extends past frame)
-      //   top edge: y=10 (almost off top), bottom edge: y=440 (chin)
-      // Center: native ~(925, 225) — but visible region center is shifted left
-      // since right portion is off-frame. Effective center ≈ (1110, 230) accounting
-      // for the truncation, but rendered canvas center stays around x=880-900
-      // because of how drawImage scales the 1344→1280.
-      // The oval is huge: rx≈280, ry≈200 (visible) — extending past right edge.
-      // rx_canvas ≈ 280 * (1280/1344) = 267
-      // ry_canvas ≈ 200 * (720/768) = 187
-      { t: 0.000, cx: 880, cy: 210, rx: 270, ry: 187, rotation: 0 },
-      { t: 0.166, cx: 875, cy: 205, rx: 270, ry: 187, rotation: 0 },
-      { t: 0.333, cx: 868, cy: 218, rx: 270, ry: 187, rotation: 0 },
-      { t: 0.500, cx: 862, cy: 225, rx: 270, ry: 187, rotation: 0 },
-      { t: 0.666, cx: 868, cy: 218, rx: 270, ry: 187, rotation: 0 },
-      { t: 0.833, cx: 875, cy: 205, rx: 270, ry: 187, rotation: 0 },
-      { t: 1.000, cx: 880, cy: 210, rx: 270, ry: 187, rotation: 0 },
+      // The face oval is large; the head extends past the top of the frame.
+      // Slow vertical bob (~25 px peak-to-peak) + tiny horizontal sway.
+      // cx values tuned by overlaying the keyframe onto the actual frames and
+      // checking it lines up with the smooth face placeholder.
+      { t: 0.000, cx: 820, cy: 170, rx: 265, ry: 165, rotation: 0 },
+      { t: 0.166, cx: 820, cy: 180, rx: 265, ry: 165, rotation: 0 },
+      { t: 0.333, cx: 810, cy: 190, rx: 265, ry: 165, rotation: 0 },
+      { t: 0.500, cx: 810, cy: 192, rx: 265, ry: 168, rotation: 0 },
+      { t: 0.666, cx: 810, cy: 190, rx: 265, ry: 165, rotation: 0 },
+      { t: 0.833, cx: 820, cy: 180, rx: 265, ry: 165, rotation: 0 },
+      { t: 1.000, cx: 820, cy: 170, rx: 265, ry: 165, rotation: 0 },
     ],
   },
   {
     id: 'club-side-grind',
     title: 'side',
-    background: CLUB_ROOM,
     dancer: '/templates/scenes/dancer-side-grind.webm',
     track: [
-      { t: 0.000, cx: 560, cy: 240, rx: 70, ry: 95, rotation: -10 },
-      { t: 0.166, cx: 558, cy: 235, rx: 70, ry: 95, rotation: -10 },
-      { t: 0.333, cx: 562, cy: 245, rx: 70, ry: 95, rotation: -10 },
-      { t: 0.500, cx: 560, cy: 240, rx: 70, ry: 95, rotation: -10 },
-      { t: 0.666, cx: 558, cy: 238, rx: 70, ry: 95, rotation: -10 },
-      { t: 0.833, cx: 560, cy: 242, rx: 70, ry: 95, rotation: -10 },
-      { t: 1.000, cx: 560, cy: 240, rx: 70, ry: 95, rotation: -10 },
+      // The dancer spins around the pole. Her face oval position in screen
+      // space oscillates as she rotates:
+      //   t=0/1 — facing camera, oval at head-centre (upper centre of frame)
+      //   t≈0.166 — 3/4 turn to her right; oval on the LEFT of head silhouette
+      //   t≈0.333 — back to camera; small oval at top of head silhouette
+      //   t≈0.500 — 3/4 turn to her left; oval on the RIGHT of head silhouette
+      //   t≈0.666 — back to camera again (she's now past 180°)
+      //   t≈0.833 — 3/4 turn to her right again (mirror of 0.166)
+      // The placeholder oval is axis-aligned in screen space — rotation stays 0.
+      { t: 0.000, cx: 555, cy: 158, rx: 60, ry: 58, rotation: 0 },
+      { t: 0.166, cx: 445, cy: 178, rx: 48, ry: 58, rotation: 0 },
+      { t: 0.333, cx: 515, cy: 142, rx: 44, ry: 46, rotation: 0 },
+      { t: 0.500, cx: 620, cy: 162, rx: 56, ry: 58, rotation: 0 },
+      { t: 0.666, cx: 475, cy: 142, rx: 44, ry: 46, rotation: 0 },
+      { t: 0.833, cx: 445, cy: 178, rx: 48, ry: 58, rotation: 0 },
+      { t: 1.000, cx: 555, cy: 158, rx: 60, ry: 58, rotation: 0 },
     ],
   },
 ]
@@ -80,12 +88,14 @@ export function getScene(id: string): Scene | undefined {
   return SCENES.find((s) => s.id === id)
 }
 
-// Linearly interpolate between keyframes for the current video time t (0..1).
-// Wraps around the loop: t=0 and t=1 are the same point.
+/**
+ * Linearly interpolate between keyframes for the current video time t (0..1).
+ * t=0 and t=1 share values, so the loop wraps invisibly.
+ */
 export function faceHoleAt(scene: Scene, t: number): FaceHoleKeyframe {
   const k = scene.track
   if (k.length === 0) {
-    return { t: 0, cx: 640, cy: 360, rx: 80, ry: 90, rotation: 0 }
+    return { t: 0, cx: CANVAS_W / 2, cy: CANVAS_H / 2, rx: 80, ry: 90, rotation: 0 }
   }
   if (k.length === 1 || t <= k[0].t) return k[0]
   if (t >= k[k.length - 1].t) return k[k.length - 1]
