@@ -83,8 +83,8 @@ export const SCENES: Scene[] = [
   // positions are eyeballed from ffmpeg-extracted frames at t = 0.0–5.5s; if
   // the oval lands off-target, adjust by eye and re-deploy.
   {
-    id: 'club-front-grind',
-    title: 'oval front',
+    id: 'club-h3v2-front-grind',
+    title: 'h3v2 front',
     dancer: '/templates/scenes/dancer-front-grind.webm',
     track: [
       { t: 0.000, cx: 800, cy: 190, rx: 85, ry: 140, rotation: 0, headYaw: 16 },
@@ -97,8 +97,8 @@ export const SCENES: Scene[] = [
     ],
   },
   {
-    id: 'club-side-grind',
-    title: 'oval side',
+    id: 'club-h3v2-side-grind',
+    title: 'h3v2 side',
     dancer: '/templates/scenes/dancer-side-grind.webm',
     track: [
       { t: 0.000, cx: 552, cy: 141, rx: 80, ry: 110, rotation: 0, headYaw: 17 },
