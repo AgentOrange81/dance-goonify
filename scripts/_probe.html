@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Face Detection Probe</title>
+  <style>
+    body { margin: 0; padding: 0; background: #000; color: #fff; font-family: monospace; font-size: 11px; }
+    #log { padding: 8px; }
+  </style>
+</head>
+<body>
+  <div id="log">[probe] booting…</div>
+  <script type="module">
+    import { FaceDetector, FilesetResolver } from '/node_modules/@mediapipe/tasks-vision/vision_bundle.mjs'
+
+    const log = (msg) => { document.getElementById('log').textContent += '\n' + msg }
+    window.__probeLog = log
+
+    log('[probe] loading WASM from /public/templates/mediapipe/wasm')
+    const vision = await FilesetResolver.forVisionTasks('/public/templates/mediapipe/wasm')
+    log('[probe] loading model from /public/templates/mediapipe/blaze_face_short_range.tflite')
+    const detector = await FaceDetector.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: '/public/templates/mediapipe/blaze_face_short_range.tflite',
+        delegate: 'CPU',
+      },
+      runningMode: 'IMAGE',
+      minDetectionConfidence: 0.5,
+    })
+    log('[probe] detector ready')
+
+    // Expose a synchronous detect(imageData) → JSON-friendly detections.
+    window.__detect = async function (imageData) {
+      const out = detector.detect(imageData)
+      return (out.detections || []).map((d) => ({
+        bbox: d.boundingBox ? {
+          originX: d.boundingBox.originX,
+          originY: d.boundingBox.originY,
+          width: d.boundingBox.width,
+          height: d.boundingBox.height,
+        } : null,
+        score: d.categories?.[0]?.score ?? 0,
+        keypoints: (d.keypoints || []).map((k) => ({ x: k.x, y: k.y })),
+      }))
+    }
+    window.__ready = true
+    log('[probe] __ready = true')
+  </script>
+</body>
+</html>
