@@ -4,9 +4,24 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import type { FacePatch } from '@/lib/face/crop'
 import { cropOval } from '@/lib/face/crop'
 import { detectFaceOval } from '@/lib/face/detect'
+import { loadOval, saveOval, loadFaceImage, saveFaceImage, clearPersistedFace } from '@/lib/storage'
 
 const ACCEPT = 'image/png,image/jpeg,image/webp'
 const MAX_BYTES = 10 * 1024 * 1024
+
+/**
+ * Encode a Uint8Array as base64 in chunks. The browser's built-in
+ * `btoa(String.fromCharCode(...))` blows up for >~4MB inputs because of
+ * argument-count limits, so we feed it in 4kB at a time.
+ */
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  const CHUNK = 0x1000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + CHUNK)))
+  }
+  return btoa(binary)
+}
 
 type Oval = {
   cx: number  // normalized 0..1 of source image naturalWidth
@@ -24,7 +39,7 @@ type View = 'idle' | 'camera' | 'ready'
 export function FacePicker({ onFaceReady }: { onFaceReady: (patch: FacePatch) => void }) {
   const [img, setImg] = useState<HTMLImageElement | null>(null)
   const [imgUrl, setImgUrl] = useState<string | null>(null)
-  const [oval, setOval] = useState<Oval>(DEFAULT_OVAL)
+  const [oval, setOval] = useState<Oval>(() => loadOval() ?? DEFAULT_OVAL)
   const [drag, setDrag] = useState<DragMode>(null)
   const [view, setView] = useState<View>('idle')
   const [errorMsg, setErrorMsg] = useState<string>('')
@@ -36,10 +51,39 @@ export function FacePicker({ onFaceReady }: { onFaceReady: (patch: FacePatch) =>
   const cameraStreamRef = useRef<MediaStream | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const ovalRef = useRef<Oval>(DEFAULT_OVAL)
+  const ovalRef = useRef<Oval>(oval)
   const dragRef = useRef<{ startX: number; startY: number; startOval: Oval; mode: DragMode } | null>(null)
 
   useEffect(() => { ovalRef.current = oval }, [oval])
+
+  // Persist the oval whenever it changes (debounced via the same render
+  // path; saves are sync localStorage writes so no perf concern).
+  useEffect(() => { saveOval(oval) }, [oval])
+
+  // On mount: if we have a persisted face image, load it so the user lands
+  // back where they left off (face already in the picker, oval already
+  // positioned). We skip auto-detect because the saved oval takes priority —
+  // the user explicitly dragged it last time.
+  useEffect(() => {
+    const persisted = loadFaceImage()
+    if (!persisted) return
+    let cancelled = false
+    const newImg = new Image()
+    newImg.crossOrigin = 'anonymous'
+    newImg.src = persisted
+    newImg.onload = () => {
+      if (cancelled) return
+      setImgUrl(persisted)
+      setImg(newImg)
+      setView('ready')
+      setAutoDetectStatus('found')  // pretend auto-detect worked; the user already positioned the oval last time
+    }
+    newImg.onerror = () => {
+      // Persisted image is corrupt or quota was wiped. Drop it.
+      clearPersistedFace()
+    }
+    return () => { cancelled = true }
+  }, [])
 
   // Stop any active camera stream when leaving the camera view or unmounting.
   useEffect(() => {
@@ -66,6 +110,18 @@ export function FacePicker({ onFaceReady }: { onFaceReady: (patch: FacePatch) =>
     if (imgUrl) URL.revokeObjectURL(imgUrl)
     const url = URL.createObjectURL(file)
     setImgUrl(url)
+
+    // Try to persist the image too — only worth it if it'll fit in localStorage.
+    // Read the blob as a data URL and attempt to save; if saveFaceImage
+    // returns false (quota exceeded), we silently continue without persistence.
+    // We do this in parallel with the <img> decode so it doesn't add latency.
+    file.arrayBuffer().then((buf) => {
+      // Detect the right MIME-prefix for the data URL — the blob's MIME may
+      // have been normalised by the OS (e.g., camera snaps land as image/jpeg).
+      const mime = file.type || 'image/jpeg'
+      const b64 = bytesToBase64(new Uint8Array(buf))
+      saveFaceImage(`data:${mime};base64,${b64}`)
+    }).catch(() => { /* persistence is best-effort */ })
 
     const newImg = new Image()
     newImg.crossOrigin = 'anonymous'
@@ -338,6 +394,11 @@ export function FacePicker({ onFaceReady }: { onFaceReady: (patch: FacePatch) =>
     setImg(null)
     setAutoDetectStatus('idle')
     setErrorMsg('')
+    // Clear the persisted image so the next page load starts clean. The
+    // saved oval is left in place — it's normalized 0..1 coords so it's
+    // harmless if the new photo has a different composition (the auto-
+    // detect on next upload will overwrite it anyway).
+    clearPersistedFace()
   }, [imgUrl])
 
   // ---- Render: idle (no image yet) ---------------------------------------
@@ -439,6 +500,18 @@ export function FacePicker({ onFaceReady }: { onFaceReady: (patch: FacePatch) =>
           onPointerCancel={onPointerUp}
           className="w-full h-full block touch-none cursor-crosshair"
         />
+        {/* Auto-detect overlay — shows a spinner while MediaPipe is warming
+            up, fades out once the face is found (or a beat after miss).
+            More visible than the old small-text hint so users see the app is
+            working on their photo instead of assuming it's frozen. */}
+        {autoDetectStatus === 'detecting' && (
+          <div className="absolute inset-0 flex items-center justify-center bg-ink-900/40 pointer-events-none">
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-10 h-10 border-2 border-teal/40 border-t-teal-glow rounded-full animate-spin" />
+              <p className="text-teal-glow text-xs lowercase">detecting face…</p>
+            </div>
+          </div>
+        )}
       </div>
       <div className="flex gap-2">
         <button
@@ -461,10 +534,8 @@ export function FacePicker({ onFaceReady }: { onFaceReady: (patch: FacePatch) =>
         </button>
       </div>
       <p className="text-xs text-gray-500 lowercase text-center">
-        {autoDetectStatus === 'detecting' && <span className="text-teal-glow">detecting face…</span>}
         {autoDetectStatus === 'found' && <span className="text-teal-glow">face auto-detected · drag to fine-tune</span>}
-        {autoDetectStatus === 'miss' && 'drag the oval to position • drag the edge handles to resize'}
-        {autoDetectStatus === 'idle' && 'drag the oval to position • drag the edge handles to resize'}
+        {(autoDetectStatus === 'miss' || autoDetectStatus === 'idle') && 'drag the oval to position • drag the edge handles to resize'}
       </p>
     </div>
   )

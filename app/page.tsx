@@ -1,15 +1,21 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { FacePicker } from '@/components/FacePicker'
 import { ScenePicker } from '@/components/ScenePicker'
 import { SceneCanvas } from '@/components/SceneCanvas'
 import { RecordButton } from '@/components/RecordButton'
 import { SCENES } from '@/lib/scenes'
 import type { FacePatch } from '@/lib/face/crop'
+import { loadSceneId, saveSceneId } from '@/lib/storage'
 
 export default function HomePage() {
-  const [sceneId, setSceneId] = useState<string>(SCENES[0].id)
+  const [sceneId, setSceneId] = useState<string>(() => {
+    const saved = loadSceneId()
+    // Verify the saved id is still a known scene — guards against stale
+    // localStorage entries from an older version of the app.
+    return saved && SCENES.find((s) => s.id === saved) ? saved : SCENES[0].id
+  })
   const [facePatch, setFacePatch] = useState<FacePatch | null>(null)
   // Owned by SceneCanvas via forwardRef so RecordButton.captureStream hits
   // the same canvas that the RAF loop paints into.
@@ -17,6 +23,9 @@ export default function HomePage() {
   // The hidden <video> lives inside SceneCanvas; the parent owns the ref so
   // RecordButton can poll video.currentTime for loop-aligned recording.
   const videoRef = useRef<HTMLVideoElement | null>(null)
+
+  // Persist the active scene id so repeat visits land back on the same scene.
+  useEffect(() => { saveSceneId(sceneId) }, [sceneId])
 
   return (
     <main className="min-h-screen p-4 md:p-8 max-w-6xl mx-auto">

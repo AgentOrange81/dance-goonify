@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { recordOneLoop, pickRecorderMime, type RecordResult } from '@/lib/canvas/record'
 
 type Props = {
@@ -11,7 +11,9 @@ type Props = {
   sceneId: string
 }
 
-type Phase = 'idle' | 'recording' | 'ready' | 'sharing'
+type Phase = 'idle' | 'countdown' | 'recording' | 'ready' | 'sharing'
+
+const COUNTDOWN_SECONDS = 3
 
 function filenameForScene(sceneId: string, ext: string): string {
   const safe = sceneId.replace(/[^a-z0-9_-]/gi, '-').toLowerCase()
@@ -28,8 +30,11 @@ function blobToFile(result: RecordResult): File {
 
 export function RecordButton({ canvasRef, videoRef, sceneId }: Props) {
   const [phase, setPhase] = useState<Phase>('idle')
+  const [countdown, setCountdown] = useState<number>(0)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<RecordResult | null>(null)
+  // Ref so the onClickRecord async loop can flip it from the cancel button.
+  const cancelRef = useRef(false)
   const supported = pickRecorderMime() !== null
 
   // Clean up the object URL when the result is replaced or unmounted.
@@ -39,11 +44,30 @@ export function RecordButton({ canvasRef, videoRef, sceneId }: Props) {
     }
   }, [result])
 
+  const onCancelCountdown = useCallback(() => {
+    cancelRef.current = true
+    setPhase('idle')
+    setCountdown(0)
+  }, [])
+
   const onClickRecord = async () => {
     const canvas = canvasRef.current
     const video = videoRef.current
-    if (!canvas || !video || phase === 'recording') return
+    if (!canvas || !video || phase === 'recording' || phase === 'countdown') return
     setError(null)
+    setPhase('countdown')
+    setCountdown(COUNTDOWN_SECONDS)
+    cancelRef.current = false
+
+    // 3-second countdown so the user can pose before capture begins — without
+    // it, the first frame catches them mid-blink or shifting into position.
+    for (let i = COUNTDOWN_SECONDS; i > 0; i--) {
+      if (cancelRef.current) return  // onCancelCountdown already reset state
+      setCountdown(i)
+      await new Promise<void>((resolve) => setTimeout(resolve, 1000))
+    }
+    if (cancelRef.current) return
+
     setPhase('recording')
     try {
       // Snap the video to t=0, then record exactly one full loop. This way
@@ -59,6 +83,8 @@ export function RecordButton({ canvasRef, videoRef, sceneId }: Props) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'record failed')
       setPhase('idle')
+    } finally {
+      setCountdown(0)
     }
   }
 
@@ -180,7 +206,7 @@ export function RecordButton({ canvasRef, videoRef, sceneId }: Props) {
     <div className="space-y-2">
       <button
         onClick={onClickRecord}
-        disabled={!supported || phase === 'recording'}
+        disabled={!supported || phase === 'recording' || phase === 'countdown'}
         className={`
           w-full py-3 px-4 rounded font-medium lowercase transition-colors
           ${!supported
@@ -190,8 +216,20 @@ export function RecordButton({ canvasRef, videoRef, sceneId }: Props) {
               : 'bg-gold hover:bg-gold/80 text-ink-900'}
         `}
       >
-        {phase === 'recording' ? '◉ recording one loop…' : '⏺ record one loop'}
+        {phase === 'recording'
+          ? '◉ recording one loop…'
+          : phase === 'countdown'
+            ? `${countdown}…`
+            : '⏺ record one loop'}
       </button>
+      {phase === 'countdown' && (
+        <button
+          onClick={onCancelCountdown}
+          className="w-full bg-ink-700 hover:bg-ink-600 text-gray-300 py-2 px-3 rounded text-sm lowercase transition-colors"
+        >
+          cancel
+        </button>
+      )}
       {!supported && (
         <p className="text-xs text-gray-500 mt-2 lowercase text-center">
           your browser doesn't support canvas recording

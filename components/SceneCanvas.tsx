@@ -30,6 +30,10 @@ export const SceneCanvas = forwardRef<HTMLCanvasElement, Props>(function SceneCa
   const videoRef = externalVideoRef ?? internalVideoRef
   const [cropTightness, setCropTightness] = useState<number>(1.0)
   const [error, setError] = useState<string | null>(null)
+  // 'loading' = src changed, video hasn't fired loadeddata yet. 'playing' =
+  // first frame is up. Used to render a skeleton overlay so users don't see
+  // a blank black canvas and assume the site is broken.
+  const [videoState, setVideoState] = useState<'loading' | 'playing'>('loading')
   const rafRef = useRef<number | null>(null)
   // Refs mirror props so the RAF closure always reads fresh values.
   const facePatchRef = useRef<FacePatch | null>(null)
@@ -52,11 +56,21 @@ export const SceneCanvas = forwardRef<HTMLCanvasElement, Props>(function SceneCa
     const scene = getScene(sceneId)
     const vid = videoRef.current
     if (!scene || !vid) return
+    setVideoState('loading')
     vid.src = scene.dancer
     vid.load()
     vid.play().catch((err) => {
       console.warn('[SceneCanvas] video play() rejected:', err)
     })
+    // Mark as playing once the first frame is decoded. loadeddata fires
+    // when the first frame is in memory; we use it instead of canplay so the
+    // overlay clears as soon as we have something to render, even if the
+    // video isn't fully buffered yet (these are <10MB webm files, fine).
+    const onLoaded = () => setVideoState('playing')
+    vid.addEventListener('loadeddata', onLoaded, { once: true })
+    return () => {
+      vid.removeEventListener('loadeddata', onLoaded)
+    }
   }, [sceneId, videoRef])
 
   // RAF loop — composes the video frame, optionally applies the one-shot
@@ -138,6 +152,14 @@ export const SceneCanvas = forwardRef<HTMLCanvasElement, Props>(function SceneCa
         className="absolute opacity-0 pointer-events-none w-0 h-0"
         aria-hidden="true"
       />
+      {/* Loading skeleton — shown while the video is decoding its first
+          frame. Cleared automatically when `loadeddata` fires. */}
+      {videoState === 'loading' && !error && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-ink-900 gap-3 pointer-events-none">
+          <div className="w-12 h-12 border-2 border-teal/40 border-t-teal-glow rounded-full animate-spin" />
+          <p className="text-gray-400 text-sm lowercase">warming up the stage…</p>
+        </div>
+      )}
       {error && (
         <div className="absolute inset-0 flex items-center justify-center bg-ink-900/80">
           <p className="text-red-400 text-sm lowercase px-4 text-center">{error}</p>
