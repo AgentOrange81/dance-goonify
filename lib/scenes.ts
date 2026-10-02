@@ -113,6 +113,39 @@ export const SCENES: Scene[] = [
 
   // === VINTAGE / A-B TEST ===
 
+  // Plate 01 (h3v1, original H3) — hard-wrap variant. Same dancer pose as the
+  // live plate 05; only the loop-wrap strategy differs (visible jump at wrap).
+  // Blankface, so the oval draw path is used. No landmarks measured — keyframes
+  // use the H4-shaped face zone as a placeholder; eyeball and adjust if needed.
+  {
+    id: 'club-h3v1-front-grind',
+    title: 'h3v1 front',
+    dancer: '/templates/scenes/vintage/dancer-h3v1-front-grind.webm',
+    track: [
+      { t: 0.000, cx: 697, cy: 210, rx: 76, ry: 101, rotation: 0, headYaw: 16 },
+      { t: 0.166, cx: 701, cy: 230, rx: 73, ry: 97, rotation: 0, headYaw: 18 },
+      { t: 0.333, cx: 690, cy: 223, rx: 83, ry: 102, rotation: 0, headYaw: 22 },
+      { t: 0.500, cx: 711, cy: 216, rx: 77, ry: 101, rotation: 0, headYaw: 22 },
+      { t: 0.666, cx: 676, cy: 206, rx: 67, ry: 98, rotation: 0, headYaw: 29 },
+      { t: 0.833, cx: 655, cy: 235, rx: 74, ry: 97, rotation: 0, headYaw: 19 },
+      { t: 1.000, cx: 696, cy: 210, rx: 76, ry: 101, rotation: 0, headYaw: 17 },
+    ],
+  },
+  {
+    id: 'club-h3v1-side-grind',
+    title: 'h3v1 side',
+    dancer: '/templates/scenes/vintage/dancer-h3v1-side-grind.webm',
+    track: [
+      { t: 0.000, cx: 696, cy: 210, rx: 75, ry: 101, rotation: 0, headYaw: 17 },
+      { t: 0.166, cx: 622, cy: 143, rx: 76, ry: 99, rotation: 0, headYaw: 34 },
+      { t: 0.333, cx: 622, cy: 143, rx: 76, ry: 99, rotation: 0, headYaw: 90 },
+      { t: 0.500, cx: 640, cy: 220, rx: 82, ry: 99, rotation: 0, headYaw: 90 },
+      { t: 0.666, cx: 589, cy: 130, rx: 64, ry: 101, rotation: 0, headYaw: 90 },
+      { t: 0.833, cx: 589, cy: 130, rx: 64, ry: 101, rotation: 0, headYaw: 39 },
+      { t: 1.000, cx: 695, cy: 210, rx: 75, ry: 100, rotation: 0, headYaw: 19 },
+    ],
+  },
+
   // Plate 06 (H4 cel-shaded) — warp showcase. Has a face, so Delaunay warping
   // is the right draw path. Inline 478-pt landmarks preserved from the previous
   // measurement against plate 06.
