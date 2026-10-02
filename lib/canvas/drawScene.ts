@@ -73,6 +73,12 @@ export function drawVideoFrame(
  * the oval becomes a true ellipse with the same aspect as the destination.
  * The patch is then drawn rotated so the user's face follows the dancer's
  * head roll.
+ *
+ * `fh.headYaw` (degrees, 0 = facing camera) drives two effects so the patch
+ * behaves sensibly during a 360° spin: `frontness = max(0, cos(yaw))` shrinks
+ * the patch horizontally (0 at perpendicular / back of head) and fades its
+ * alpha to 0 across the back-of-head region. When `frontness` is 0 the patch
+ * isn't drawn at all — no seam, no wasted clip.
  */
 export function drawPatch(
   ctx: CanvasRenderingContext2D,
@@ -80,6 +86,17 @@ export function drawPatch(
   patch: FacePatch,
   cropTightness: number,
 ): void {
+  const yawRad = (fh.headYaw * Math.PI) / 180
+  // 1 at front, 0 at perpendicular or back of head. Using max(0, cos(yaw))
+  // means the patch is fully visible only for yaw ∈ [-90°, 90°] (mod 360),
+  // i.e. dancer's face roughly toward camera.
+  const frontness = Math.max(0, Math.cos(yawRad))
+  if (frontness < 0.01) {
+    // Back-of-head dead zone — skip the draw entirely. No clip, no ring,
+    // no patch pixels on screen.
+    return
+  }
+
   const tightness = Math.max(0.3, Math.min(1.5, cropTightness))
   const rot = (fh.rotation * Math.PI) / 180
 
@@ -98,6 +115,10 @@ export function drawPatch(
   const sx = fh.rx / ov.rx
   const sy = fh.ry / ov.ry
   const baseScale = Math.min(sx, sy)
+  // Horizontal squash: as the head turns away, scale_x drops to 0. This
+  // visually communicates "head turned" without needing an actual 3D face
+  // model. We scale around the oval's vertical center axis so the squash
+  // looks like a perspective flip, not a slide.
   const finalScale = baseScale * tightness
 
   const patchSize = patch.canvas.width
@@ -107,15 +128,24 @@ export function drawPatch(
   // decontamination ring below.
   const edgeColor = sampleDestinationChroma(ctx, fh)
 
-  // Clip to the rotated destination oval.
+  // Save state so we can apply non-uniform scale + alpha for the squash/fade.
   ctx.save()
-  ctx.beginPath()
-  ctx.ellipse(fh.cx, fh.cy, fh.rx, fh.ry, rot, 0, Math.PI * 2)
-  ctx.clip()
-
-  // Draw the patch centred on the destination oval, rotated by `rot`.
+  ctx.globalAlpha *= frontness
+  // Translate to oval center, apply head rotation, then squash horizontally
+  // toward the vertical centerline. We do the squash as a separate scale
+  // around x=0 inside the already-translated frame, so the oval shrinks
+  // toward its own vertical axis (mirroring what a real face turning away
+  // would look like).
   ctx.translate(fh.cx, fh.cy)
   ctx.rotate(rot)
+  ctx.scale(frontness, 1)
+
+  // Clip to the destination oval. Apply AFTER translate/scale so the clip
+  // uses the destination's real oval shape, not the squashed one.
+  ctx.beginPath()
+  ctx.ellipse(0, 0, fh.rx, fh.ry, 0, 0, Math.PI * 2)
+  ctx.clip()
+
   ctx.drawImage(
     patch.canvas,
     -drawSize / 2,
@@ -125,10 +155,9 @@ export function drawPatch(
   )
   ctx.restore()
 
-  // After the patch is on top, paint a soft ring biased toward the dancer's
-  // skin tone inside the oval boundary. This softens the alpha feather and
-  // suppresses the brown halo against the warm teal rim light. Keep it
-  // narrow and low-alpha so it doesn't look like a separate overlay.
+  // The decontamination ring is painted on the ORIGINAL oval (not the
+  // squashed one) so the seam-blending band stays consistent with the
+  // destination head silhouette regardless of yaw.
   const ringWidth = Math.min(fh.rx, fh.ry) * 0.08
   const ringInner = Math.max(2, Math.min(fh.rx, fh.ry) - ringWidth)
   const ringOuter = Math.min(fh.rx, fh.ry)
@@ -137,7 +166,7 @@ export function drawPatch(
     fh.cx, fh.cy, ringOuter,
   )
   grad.addColorStop(0, `rgba(${edgeColor.r}, ${edgeColor.g}, ${edgeColor.b}, 0)`)
-  grad.addColorStop(1, `rgba(${edgeColor.r}, ${edgeColor.g}, ${edgeColor.b}, 0.18)`)
+  grad.addColorStop(1, `rgba(${edgeColor.r}, ${edgeColor.g}, ${edgeColor.b}, ${0.18 * frontness})`)
   ctx.save()
   ctx.fillStyle = grad
   ctx.beginPath()
